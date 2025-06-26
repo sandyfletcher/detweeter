@@ -120,12 +120,10 @@ if __name__ == "__main__":
         deleted_count = 0
         processed_tweet_permalinks = set()
         consecutive_scrolls_without_new_tweets = 0
-        last_scroll_height = driver.execute_script("return document.body.scrollHeight")
         while True: # main loop for scrolling and processing
             if num_to_delete > 0 and deleted_count >= num_to_delete:
                 print(f"Target of {num_to_delete} deletions reached.")
                 break
-            deleted_in_this_pass = False
             while True: # inner loop repeatedly finds and deletes one tweet at a time from the current view.
                 tweets_on_page = driver.find_elements(*LOCATORS["TWEET_ARTICLE"])
                 found_tweet_to_delete = False
@@ -159,7 +157,6 @@ if __name__ == "__main__":
                         wait.until(EC.staleness_of(tweet)) # wait for UI to update by confirming tweet is gone
                         deleted_count += 1
                         print(f" TWEET DELETED. TOTAL THIS SESSION: {deleted_count}")
-                        deleted_in_this_pass = True
                         found_tweet_to_delete = True
                         break # exit for-loop to restart search from top
                     except StaleElementReferenceException:
@@ -183,22 +180,28 @@ if __name__ == "__main__":
                 break # exit main while-loop if target met
             # --- Scrolling Logic ---
             print("Scrolling for more tweets...")
+            # 1. Get the number of tweets before scrolling.
+            num_tweets_before_scroll = len(driver.find_elements(*LOCATORS["TWEET_ARTICLE"]))
+            # 2. Perform the scroll.
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(3) # wait for content to load
-            new_scroll_height = driver.execute_script("return document.body.scrollHeight")
-            if new_scroll_height == last_scroll_height:
-                if not deleted_in_this_pass:
-                    consecutive_scrolls_without_new_tweets += 1
-                    print(f"Scrolled and found no new content.  Attempt {consecutive_scrolls_without_new_tweets} of 3")
-                else:
-                    consecutive_scrolls_without_new_tweets = 0 # reset if something is deleted
-            else:
-                consecutive_scrolls_without_new_tweets = 0 # new content found
-            last_scroll_height = new_scroll_height
+            try:
+                # 3. Wait up to 20 seconds for new tweets to load.
+                # The condition is that the number of tweet articles becomes greater than it was before we scrolled.
+                long_wait.until(
+                    lambda d: len(d.find_elements(*LOCATORS["TWEET_ARTICLE"])) > num_tweets_before_scroll
+                )
+                print("New tweets loaded.")
+                consecutive_scrolls_without_new_tweets = 0 # Reset counter on success
+            except TimeoutException:
+                # 4. If the wait times out, it means no new tweets appeared.
+                consecutive_scrolls_without_new_tweets += 1
+                print(f"Scroll timed out, no new tweets loaded. Attempt {consecutive_scrolls_without_new_tweets} of 3.")
             if consecutive_scrolls_without_new_tweets >= 3:
                 print("Scrolled repeatedly without finding new content. Assuming end of timeline.")
                 break
         print(f"Tweet Deletion Complete - Total: {deleted_count}")
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user (Ctrl+C).")
     except Exception as e:
         print(f"\nCritical Error: {e}")
         import traceback
