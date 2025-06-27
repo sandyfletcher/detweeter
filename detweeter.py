@@ -84,16 +84,16 @@ def login_to_twitter(driver, wait, login_identifier, password): # handle login p
             return False
 def process_tweet(tweet, settings, wait, driver): # check if tweet is eligible for deletion (authored by user, not bookmarked) and attempts to delete it. Returns True if deleted, False otherwise.
     try:
-        # Check 1: Is it our tweet?
+        # check 1: is it our tweet?
         author_handle = tweet.find_element(*LOCATORS["TWEET_AUTHOR_HANDLE"]).text[1:]
         if author_handle.lower() != settings['handle'].lower():
-            return False # Not our tweet, skip.
-        # Check 2: Is it bookmarked? (We will not delete bookmarked tweets)
+            return False # not our tweet, skip
+        # check 2: is it bookmarked?
         if tweet.find_elements(*LOCATORS["BOOKMARK_BUTTON_EXISTS"]):
             permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
             print(f"Skipped (bookmarked): {permalink}")
             return False
-        # If all checks pass, it qualifies. Proceed with deletion.
+        # if all checks pass, it qualifies — proceed with deletion
         permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
         print(f"QUALIFIES FOR DELETION: {permalink}")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", tweet)
@@ -111,10 +111,7 @@ def process_tweet(tweet, settings, wait, driver): # check if tweet is eligible f
         driver.find_element(*LOCATORS["BODY"]).send_keys(Keys.ESCAPE)
         time.sleep(0.5)
         return False
-    
-# --- Main Script ---
-
-if __name__ == "__main__":
+if __name__ == "__main__": # main script
     print("BOOTING UP — CTRL+C TO ABORT")
     settings = get_user_settings()
     if not all([settings["handle"], settings["password"]]):
