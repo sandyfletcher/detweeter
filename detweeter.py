@@ -144,7 +144,7 @@ class DetweeterApp:
                 break
         if self.thread.is_alive(): # check if thread has finished
             self.root.after(100, self.poll_thread) # if not, schedule another check
-        else: # if it has, run  completion logic
+        else: # if it has, run completion logic
             self.process_finished()
     def display_log_message(self, message): # appends a message to log widget and scrolls to end
         self.log_widget.config(state='normal')
@@ -185,9 +185,7 @@ def login_to_twitter(driver, wait, login_identifier, password):
             print("Login command sent.")
         except Exception as e:
             print(f"Login click action was interrupted (e.g., by page navigation). This is expected. Proceeding to verification.")
-    except Exception as e:
-        # If an exception happens anywhere else in the login sequence (e.g., can't find username field),
-        # it is a genuine failure.
+    except Exception as e: # if an exception happens anywhere else in the login sequence (e.g., can't find username field), it's a genuine failure
         print(f"Fatal error occurred during login input sequence: {e}")
         return False
     # This verification block is the single source of truth for login success.
@@ -306,6 +304,8 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
                 print("No tweets found on initial load. Scrolling down to find some.")
             found_new_tweet_this_pass = False
             for tweet in tweets_on_page:
+                if settings["num_to_delete"] > 0 and deleted_count >= settings["num_to_delete"]:
+                    break # check again in case inner loop reached the target
                 try:
                     permalink_element = WebDriverWait(tweet, 2).until(
                         EC.presence_of_element_located(LOCATORS["TWEET_PERMALINK"])
@@ -318,35 +318,34 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
                     if process_tweet(tweet, settings, wait, driver):
                         deleted_count += 1
                         print(f"TWEET DELETED — TOTAL THIS SESSION: {deleted_count}")
-                        time.sleep(1)
-                        break 
+                        time.sleep(0.5) # small pause for UI to settle after deletion
                 except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
                     print("  - Could not process a tweet element, it may have been an ad or became stale. Skipping.")
                     continue
-            else: 
+            else: # for the 'for' loop - it runs if loop completes without a 'break'
                 if found_new_tweet_this_pass:
                     stalls = 0
-                    print("Visible tweets have been processed/skipped. Scrolling down...")
+                    print("Visible tweets have been processed. Scrolling...")
                 else:
                     stalls += 1
-                    print(f"No new, unprocessed tweets found. Scrolling stall count: {stalls}/3")
+                    print(f"No new tweets found. Stall count: {stalls}/3")
                 if stalls >= 3:
                     print("Scrolling has repeatedly stalled — assuming end of timeline.")
                     break
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        final_message = f"Detweeter has finished.\nTotal tweets deleted: {deleted_count}"       
+                time.sleep(3)
+        final_message = f"DETWEETER COMPLETE\nDELETED: {deleted_count}"       
     except KeyboardInterrupt:
-        print("\nScript interrupted by user.")
+        print("Script interrupted by user.")
         final_message = "Operation cancelled by user."
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
         traceback.print_exc(file=sys.stdout)
-        final_message = f"A critical error occurred:\n{str(e)[:200]}\n\nSee log for details."
+        final_message = f"A critical error occurred:\n{str(e)[:200]}\nSee log for details."
     finally:
         if driver:
-            print("Closing browser...")
+            print("Closing browser and exiting script.")
             driver.quit()
-        print("Exiting Script.")
         result_queue.put(final_message)
         sys.stdout = sys.__stdout__
 
