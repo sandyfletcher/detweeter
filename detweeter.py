@@ -245,12 +245,6 @@ class DetweeterApp:
     def process_finished(self): # called when worker thread is complete
         self.toggle_widgets_state('normal')
         self.toggle_num_entry_state() # ensure num_entry state is correct based on checkbox
-        try: # get final result from the dedicated result queue
-            final_message = self.result_queue.get_nowait()
-            if final_message:
-                 messagebox.showinfo("Complete", final_message)
-        except queue.Empty: # can happen if thread crashes before sending a result
-            messagebox.showwarning("Complete", "Process finished, but no final status was received.")
     def toggle_widgets_state(self, state):
         for widget in [self.handle_entry, self.password_entry, self.num_entry, 
                        self.submit_button, self.firefox_rb, self.chrome_rb, self.delete_all_cb]:
@@ -315,15 +309,15 @@ def check_login_success(driver, browser_name): # checks for multiple indicators 
             continue
     return False
 
-def process_tweet(tweet, settings, wait, driver):
+def process_tweet(tweet, settings, wait, driver): # processes a single tweet and returns a status string: 'DELETED'/'SKIPPED_BOOKMARK'/'SKIPPED_AUTHOR'/'ERROR'
     try:
         author_handle = tweet.find_element(*LOCATORS["TWEET_AUTHOR_HANDLE"]).text[1:]
         if author_handle.lower() != settings['handle'].lower():
-            return False
+            return 'SKIPPED_AUTHOR'
         if tweet.find_elements(*LOCATORS["BOOKMARK_BUTTON_EXISTS"]):
             permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
             print(f"Skipped (bookmarked): {permalink}")
-            return False
+            return 'SKIPPED_BOOKMARK'
         permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
         print(f"QUALIFIES FOR DELETION: {permalink}")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", tweet)
@@ -335,19 +329,22 @@ def process_tweet(tweet, settings, wait, driver):
         confirm_button = wait.until(EC.element_to_be_clickable(LOCATORS["DELETE_CONFIRM_BUTTON"]))
         driver.execute_script("arguments[0].click();", confirm_button)
         wait.until(EC.staleness_of(tweet))
-        return True
+        return 'DELETED'
     except (TimeoutException, StaleElementReferenceException, NoSuchElementException) as e:
         print(f"  - Action failed: {type(e).__name__}. Closing menu and continuing.")
         try:
             driver.find_element(*LOCATORS["BODY"]).send_keys(Keys.ESCAPE)
             time.sleep(0.5)
         except: pass
-        return False
+        return 'ERROR'
 
 def run_detweeter_logic(settings, log_queue, result_queue): # main worker function that runs in a separate thread
     sys.stdout = QueueWriter(log_queue)
     driver = None
     final_message = ""
+    deleted_count = 0
+    skipped_count = 0
+    processed_count = 0
     try:
         print("Request received. Loading...")
         if settings['browser'] == "Firefox":
@@ -383,7 +380,6 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
             print("∞ MODE — ALL unbookmarked tweets.")
         else:
             print(f"# MODE — {settings['num_to_delete']} most recent unbookmarked tweets.")
-        deleted_count = 0
         processed_permalinks = set()
         stalls = 0
         while True:
@@ -406,10 +402,19 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
                         continue
                     found_new_tweet_this_pass = True
                     processed_permalinks.add(permalink)
-                    if process_tweet(tweet, settings, wait, driver):
+                    status = process_tweet(tweet, settings, wait, driver)
+                    if status == 'DELETED':
+                        processed_count += 1
                         deleted_count += 1
                         print(f"TWEET DELETED — TOTAL THIS SESSION: {deleted_count}")
                         time.sleep(0.5) # small pause for UI to settle
+                    elif status == 'SKIPPED_BOOKMARK':
+                        processed_count += 1
+                        skipped_count += 1
+                    elif status == 'ERROR':
+                        # An attempt was made on our tweet, but failed. It's counted as processed.
+                        processed_count += 1
+                        # If status is 'SKIPPED_AUTHOR', we do nothing and don't count it.
                 except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
                     print("  - Could not process a tweet element, may have become stale or been an ad.")
                     continue
@@ -420,23 +425,25 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
                 else:
                     stalls += 1
                 if stalls >= 3:
-                    print("Scrolling has repeatedly stalled — assuming end of timeline.")
+                    print("Scrolling appears to have reached the end of timeline.")
                     break
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(3)
-        final_message = f"{deleted_count} TWEETS DELETED"       
     except KeyboardInterrupt:
         print("Script interrupted by user.")
-        final_message = "Operation cancelled by user."
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
         traceback.print_exc(file=sys.stdout)
-        final_message = f"CRITICAL ERROR:\n{str(e)[:200]}"
     finally:
+        print("\n" + "="*20)
+        print(" DETWEETION SUMMARY")
+        print("="*20)
+        print(f"Tweets Evaluated: {processed_count} by @{settings.get('handle', 'user')}")
+        print(f"Tweets Skipped:   {skipped_count}")
+        print(f"Tweets Deleted:   {deleted_count}")
+        print("="*20)
         if driver:
-            print("Closing browser, exiting script.")
             driver.quit()
-        result_queue.put(final_message)
         sys.stdout = sys.__stdout__
 
 if __name__ == "__main__":
