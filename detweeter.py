@@ -5,6 +5,10 @@ import queue
 import threading
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
+try:
+    import pyglet
+except ImportError:
+    pyglet = None # allows script to run without pyglet with a fallback.
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
@@ -72,36 +76,73 @@ class DetweeterApp:
         ENTRY_BG_COLOR = "#3b4048"
         BTN_COLOR = "#61afef"
         BTN_HOVER_COLOR = "#528bcf"
-        FONT_FAMILY = "Segoe UI"
-        FONT_NORMAL = (FONT_FAMILY, 10)
-        FONT_BOLD = (FONT_FAMILY, 16, "bold")
         FONT_MONO = ("Consolas", 10)
-        self.root.title("DETWEETER")
-        self.root.minsize(550, 700)
-        try: # determine base path, accounting for whether it's a script or exe
+        # Determine base path for assets like icon and fonts
+        base_path = ""
+        try: 
             if getattr(sys, 'frozen', False):
-                base_path = sys._MEIPASS # if app is run as a bundle, PyInstaller bootloader extends sys module by flag frozen=True and sets app path into variable _MEIPASS'
-            else: # construct the full path to the icon
-                base_path = os.path.dirname(os.path.abspath(__file__)) 
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.dirname(os.path.abspath(__file__))
+            
             icon_path = os.path.join(base_path, 'icon.ico')
             self.root.iconbitmap(icon_path)
         except tk.TclError:
             print("Intended icon.ico could not be loaded, using default fallback.")
+        except Exception as e:
+            print(f"Could not determine base path: {e}")
+        # Define fallback fonts first.
+        title_font_family = "Segoe UI"
+        body_font_family = "Segoe UI"
+        if pyglet and base_path:
+            title_font_path = os.path.join(base_path, 'assets', 'RubikDirt.ttf')
+            body_font_path = os.path.join(base_path, 'assets', 'StintUltraExpanded.ttf')
+            if os.path.exists(title_font_path): # check for and load title font
+                try:
+                    pyglet.font.add_file(title_font_path)
+                    title_font_family = "Rubik Dirt"
+                    print(f"Successfully loaded title font: {title_font_family}")
+                except Exception as e:
+                    print(f"Error loading title font file '{title_font_path}'. Using default. Error: {e}")
+            else:
+                print(f"Title font not found at '{title_font_path}'. Using default.")
+
+            if os.path.exists(body_font_path): # check for and load body font
+                try:
+                    pyglet.font.add_file(body_font_path)
+                    body_font_family = "Stint Ultra Expanded"
+                    print(f"Successfully loaded body font: {body_font_family}")
+                except Exception as e:
+                    print(f"Error loading body font file '{body_font_path}'. Using default. Error: {e}")
+            else:
+                print(f"Body font not found at '{body_font_path}'. Using default.")
+        elif not pyglet:
+            print("pyglet not found. To use custom fonts, run: pip install pyglet. Using default fonts.")
+        # Define final fonts based on what was loaded
+        FONT_NORMAL = (body_font_family, 10)
+        FONT_BOLD = (title_font_family, 18)
+        self.root.title("DETWEETER")
+        self.root.minsize(600, 750) 
         self.root.configure(bg=BG_COLOR)
-        settings_frame = tk.Frame(self.root, padx=20, pady=20, bg=BG_COLOR)
-        settings_frame.grid(row=0, column=0, sticky="ew") # expand east-west
-        settings_frame.grid_columnconfigure(1, weight=1) # allow widgets column to expand
+        main_frame = tk.Frame(self.root, padx=20, pady=20, bg=BG_COLOR)
+        main_frame.grid(row=0, column=0, sticky="ew")
+        main_frame.grid_columnconfigure(0, weight=1) 
+        content_frame = tk.Frame(main_frame, bg=BG_COLOR)
+        content_frame.grid(row=0, column=0) 
+        content_frame.grid_columnconfigure(1, weight=1) 
         # title
-        tk.Label(settings_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg="white").grid(row=0, column=0, columnspan=2, pady=(0, 10))
-        # instructional text
-        info_text = "This tool automates deleting your tweets. Specify your credentials and choose to delete a specific number of recent tweets or all of them. Tweets you have bookmarked will be skipped. Use with caution."
-        tk.Label(settings_frame, text=info_text, font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR, wraplength=480, justify='left').grid(row=1, column=0, columnspan=2, pady=(0, 20))
+        tk.Label(content_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg="white").grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        info_text = (
+            "This tool automates deleting your tweets.\n\n"
+            "If there's something you want to save, bookmark it and the script will pass over it.\n\n"
+            "Choose a browser, input your credentials, and select a deletion mode."
+        )
+        tk.Label(content_frame, text=info_text, font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR, wraplength=520, justify='left').grid(row=1, column=0, columnspan=2, pady=(0, 25))
         # browser selection
-        tk.Label(settings_frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=2, column=0, sticky='w', padx=5, pady=10)
-        browser_frame = tk.Frame(settings_frame, bg=BG_COLOR)
+        tk.Label(content_frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=2, column=0, sticky='w', padx=5, pady=10)
+        browser_frame = tk.Frame(content_frame, bg=BG_COLOR)
         browser_frame.grid(row=2, column=1, sticky='w', pady=5)
         self.browser_choice = tk.StringVar(value="Firefox")
-        # radio buttons
         rb_style = {'bg': BG_COLOR, 'fg': FG_COLOR, 'selectcolor': BG_COLOR, 'font': FONT_NORMAL,'activebackground': BG_COLOR, 'activeforeground': 'white', 'highlightthickness': 0, 'borderwidth': 0}
         self.firefox_rb = tk.Radiobutton(browser_frame, text="Firefox", variable=self.browser_choice, value="Firefox", **rb_style)
         self.firefox_rb.pack(side='left', padx=5)
@@ -110,15 +151,15 @@ class DetweeterApp:
         # input fields and labels
         entry_style = {'width': 35, 'font': FONT_NORMAL, 'bg': ENTRY_BG_COLOR, 'fg': FG_COLOR, 'relief': 'flat', 'insertbackground': FG_COLOR}
         label_style = {'font': FONT_NORMAL, 'bg': BG_COLOR, 'fg': FG_COLOR}
-        tk.Label(settings_frame, text="Handle (@)", **label_style).grid(row=3, column=0, sticky='w', padx=5, pady=10)
-        self.handle_entry = tk.Entry(settings_frame, **entry_style, validate='key', validatecommand=self.validate_handle_cmd)
+        tk.Label(content_frame, text="Handle (@)", **label_style).grid(row=3, column=0, sticky='w', padx=5, pady=10)
+        self.handle_entry = tk.Entry(content_frame, **entry_style, validate='key', validatecommand=self.validate_handle_cmd)
         self.handle_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
-        tk.Label(settings_frame, text="Password", **label_style).grid(row=4, column=0, sticky='w', padx=5, pady=10)
-        self.password_entry = tk.Entry(settings_frame, show="*", **entry_style, validate='key', validatecommand=self.validate_password_cmd)
+        tk.Label(content_frame, text="Password", **label_style).grid(row=4, column=0, sticky='w', padx=5, pady=10)
+        self.password_entry = tk.Entry(content_frame, show="*", **entry_style, validate='key', validatecommand=self.validate_password_cmd)
         self.password_entry.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
         # deletion modes frame
-        delete_frame = tk.Frame(settings_frame, bg=BG_COLOR)
-        delete_frame.grid(row=5, column=0, columnspan=2, sticky='ew', pady=10)
+        delete_frame = tk.Frame(content_frame, bg=BG_COLOR)
+        delete_frame.grid(row=5, column=0, columnspan=2, sticky='ew', pady=(20, 10))
         delete_frame.grid_columnconfigure(1, weight=1)
         tk.Label(delete_frame, text="Mode", **label_style).grid(row=0, column=0, sticky='w', padx=5)
         controls_frame = tk.Frame(delete_frame, bg=BG_COLOR)
@@ -134,15 +175,16 @@ class DetweeterApp:
         self.num_entry.insert(0, "10")
         tk.Label(controls_frame, text="tweets", **label_style).pack(side='left', padx=5)
         # submit button
-        self.submit_button = tk.Button(settings_frame, text="Start Deletion", command=self.start_deletion_process, font=(FONT_FAMILY, 10, "bold"), bg=BTN_COLOR, fg="white", relief='flat', borderwidth=0, activebackground=BTN_HOVER_COLOR, activeforeground="white")
-        self.submit_button.grid(row=6, column=0, columnspan=2, pady=25, ipadx=10, ipady=5, sticky='ew')
+        self.submit_button = tk.Button(content_frame, text="Start Deletion", command=self.start_deletion_process, font=(body_font_family, 10, "bold"), bg=BTN_COLOR, fg="white", relief='flat', borderwidth=0, activebackground=BTN_HOVER_COLOR, activeforeground="white")
+        self.submit_button.grid(row=6, column=0, columnspan=2, pady=30, ipadx=10, ipady=5, sticky='ew')
         # log frame uses grid for resizing
         log_frame = tk.Frame(self.root, padx=10, pady=10, bg=LOG_BG_COLOR)
-        log_frame.grid(row=1, column=0, sticky='nsew') # 'nsew' = expand in all directions
+        log_frame.grid(row=1, column=0, sticky='nsew')
         log_frame.grid_rowconfigure(0, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
         self.log_widget = scrolledtext.ScrolledText(log_frame, state='disabled', wrap=tk.WORD, bg=LOG_BG_COLOR, fg=FG_COLOR, font=FONT_MONO, relief='flat', borderwidth=0)
         self.log_widget.grid(row=0, column=0, sticky='nsew')
+
     def toggle_num_entry_state(self):
         if self.delete_all_var.get():
             self.num_entry.config(state='disabled')
@@ -154,7 +196,7 @@ class DetweeterApp:
         if not handle or not password:
             messagebox.showerror("Error", "Handle and Password are required.")
             return
-        num_to_delete = -1 # Sentinel value
+        num_to_delete = -1 # sentinel value
         if self.delete_all_var.get():
             num_to_delete = 0 # 0 signifies "all" mode
         else:
