@@ -179,15 +179,11 @@ def login_to_twitter(driver, wait, login_identifier, password):
         password_field = wait.until(EC.element_to_be_clickable(LOCATORS["PASSWORD_INPUT"]))
         password_field.send_keys(password)
         print("Clicking login button...")
-        try:
-            # We try to click the login button...
+        try: # behaviour here varies across browsers — if an exception occurs we move to verification regardless
             login_button = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_BUTTON"]))
             driver.execute_script("arguments[0].click();", login_button)
             print("Login command sent.")
         except Exception as e:
-            # ...but if an exception occurs (e.g., TimeoutException on Chrome because the page
-            # navigated away), we acknowledge it and proceed. This is NOT a failure.
-            # The real test of success is the verification loop that follows.
             print(f"Login click action was interrupted (e.g., by page navigation). This is expected. Proceeding to verification.")
     except Exception as e:
         # If an exception happens anywhere else in the login sequence (e.g., can't find username field),
