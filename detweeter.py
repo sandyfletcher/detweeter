@@ -178,16 +178,24 @@ def login_to_twitter(driver, wait, login_identifier, password):
         print("Entering password...")
         password_field = wait.until(EC.element_to_be_clickable(LOCATORS["PASSWORD_INPUT"]))
         password_field.send_keys(password)
-        print("Clicking login button...") # here we click login, and due to the error that occurs we've ignored exceptions that happen right after
+        print("Clicking login button...")
         try:
+            # We try to click the login button...
             login_button = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_BUTTON"]))
             driver.execute_script("arguments[0].click();", login_button)
             print("Login command sent.")
-        except Exception as e: # this is the consistent error, but the script catches a few seconds later and continues
-            print(f"Initial login failed, but script will continue: {type(e).__name__}")
+        except Exception as e:
+            # ...but if an exception occurs (e.g., TimeoutException on Chrome because the page
+            # navigated away), we acknowledge it and proceed. This is NOT a failure.
+            # The real test of success is the verification loop that follows.
+            print(f"Login click action was interrupted (e.g., by page navigation). This is expected. Proceeding to verification.")
     except Exception as e:
-        print(f"Fatal error occurred before final login click: {e}")
+        # If an exception happens anywhere else in the login sequence (e.g., can't find username field),
+        # it is a genuine failure.
+        print(f"Fatal error occurred during login input sequence: {e}")
         return False
+    # This verification block is the single source of truth for login success.
+    # It runs regardless of whether the final click was "confirmed" or threw an exception.
     print("Verifying login by polling for home page elements...")
     max_attempts = 15  # 15 attempts * 2 seconds = 30 second timeout
     for attempt in range(max_attempts):
@@ -197,7 +205,7 @@ def login_to_twitter(driver, wait, login_identifier, password):
             return True
         time.sleep(2)  # pause before retrying
     print("--- LOGIN FAILED ---") # if loop finishes, login has genuinely failed
-    print("Please try again or use another browser. If no luck, send me a message and I'll fix it.")
+    print("Login verification failed. Could not find home page elements after attempting to log in.")
     return False
 
 def check_login_success(driver, browser_name): # checks for multiple indicators of a successful login
@@ -330,7 +338,6 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
                     print("Scrolling has repeatedly stalled — assuming end of timeline.")
                     break
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(3)
         final_message = f"Detweeter has finished.\nTotal tweets deleted: {deleted_count}"       
     except KeyboardInterrupt:
         print("\nScript interrupted by user.")
