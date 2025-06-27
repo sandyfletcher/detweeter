@@ -46,12 +46,11 @@ class QueueWriter: # helper class to redirect stdout to a queue
 class DetweeterApp:
     def __init__(self, root):
         self.root = root
-        self.log_queue = queue.Queue()
         self.thread = None
-        self.final_message = ""
+        self.log_queue = queue.Queue()
+        self.result_queue = queue.Queue()
         self.setup_gui()
-    def setup_gui(self):
-        """Creates the styled tkinter GUI window."""
+    def setup_gui(self): # creates styled tkinter GUI window
         BG_COLOR, FG_COLOR, BTN_COLOR = "#2c3e50", "#ecf0f1", "#2980b9"
         FONT_NORMAL, FONT_BOLD = ("Helvetica", 10), ("Helvetica", 16, "bold")
         self.root.title("DETWEETER")
@@ -67,8 +66,8 @@ class DetweeterApp:
         except tk.TclError:
             print("icon.ico not found or could not be loaded, using default icon.")
         self.root.configure(bg=BG_COLOR)
-        self.root.resizable(True, True) # allow resizing for log view
         # Settings Frame
+        self.root.resizable(True, True)
         settings_frame = tk.Frame(self.root, padx=15, pady=15, bg=BG_COLOR)
         settings_frame.pack(expand=False, fill='x', side='top')
         tk.Label(settings_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg=FG_COLOR).grid(row=0, column=0, columnspan=2, pady=(0, 15))
@@ -130,43 +129,43 @@ class DetweeterApp:
         self.log_widget.delete('1.0', tk.END)
         self.log_widget.config(state='disabled')
         # start the worker thread
-        self.thread = threading.Thread(target=run_detweeter_logic, args=(settings, self.log_queue))
-        self.thread.daemon = True # allows main window to exit even if thread is running
+        self.thread = threading.Thread(
+            target=run_detweeter_logic, 
+            args=(settings, self.log_queue, self.result_queue)
+        )
+        self.thread.daemon = True
         self.thread.start()
-        # start polling the queue for log messages
-        self.poll_log_queue()
-    def poll_log_queue(self): # checks queue for new messages and updates log widget
-        while True:
+        self.poll_thread()
+    def poll_thread(self):
+        """Check the log queue and the thread status."""
+        while True: # drain log queue
             try:
                 message = self.log_queue.get_nowait()
-                if message is None: # sentinel value means the thread is done
-                    self.process_finished()
-                    return
                 self.display_log_message(message)
             except queue.Empty:
                 break
-        self.root.after(100, self.poll_log_queue) # schedule next check
-    def display_log_message(self, message):
-        """Appends a message to the log widget and scrolls to the end."""
+        if self.thread.is_alive(): # check if thread has finished
+            self.root.after(100, self.poll_thread) # if not, schedule another check
+        else: # if it has, run  completion logic
+            self.process_finished()
+    def display_log_message(self, message): # appends a message to log widget and scrolls to end
         self.log_widget.config(state='normal')
         self.log_widget.insert(tk.END, message)
-        self.log_widget.see(tk.END) # auto-scroll
-        self.log_widget.config(state='disabled') 
-    def process_finished(self):
-        """Called when the worker thread is complete."""
+        self.log_widget.see(tk.END)
+        self.log_widget.config(state='disabled')
+    def process_finished(self): # called when worker thread is complete
         self.toggle_widgets_state('normal')
-        if self.final_message:
-             messagebox.showinfo("Complete", self.final_message)
-        self.final_message = "" # reset for next run
+        try: # get final result from the dedicated result queue
+            final_message = self.result_queue.get_nowait()
+            if final_message:
+                 messagebox.showinfo("Complete", final_message)
+        except queue.Empty: # this case can happen if thread crashed before sending a result
+            messagebox.showwarning("Complete", "Process finished, but no final status was received.")
     def toggle_widgets_state(self, state):
-        """Disables or enables the input widgets."""
-        self.handle_entry.config(state=state)
-        self.password_entry.config(state=state)
-        self.num_entry.config(state=state)
-        self.submit_button.config(state=state)
-        self.firefox_rb.config(state=state)
-        self.chrome_rb.config(state=state)
-        
+        for widget in [self.handle_entry, self.password_entry, self.num_entry, 
+                       self.submit_button, self.firefox_rb, self.chrome_rb]:
+            widget.config(state=state)
+
 def login_to_twitter(driver, wait, login_identifier, password):
     print("Navigating to login page...")
     driver.get("https://x.com/login")
@@ -179,18 +178,18 @@ def login_to_twitter(driver, wait, login_identifier, password):
         password_field.send_keys(password)
         login_button = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_BUTTON"]))
         driver.execute_script("arguments[0].click();", login_button)
-        print("Waiting for home feed to load after login...")
-        long_wait = WebDriverWait(driver, 30)
-        long_wait.until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))        
+        print("Waiting for login to complete (URL change)...")
+        WebDriverWait(driver, 20).until(EC.url_contains("home"))
+        print("Waiting for home feed to confirm login...")
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))
         print("Home feed detected. Login successful.")
         return True
     except Exception:
         print(f"--- MANUAL ACTION REQUIRED ---")
-        print("Log in manually, script will re-check for home feed in 30 seconds to continue...")
-        time.sleep(10) # give time to read
+        print(f"Automated login failed. You may need to solve a CAPTCHA or verify your identity.")
+        print("After you've logged in and see the home feed, the script will automatically continue.")
         try:
-            # keep manual check as a fallback
-            WebDriverWait(driver, 30).until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))
+            WebDriverWait(driver, 60).until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))
             print("Login confirmed manually.")
             return True
         except TimeoutException:
@@ -225,11 +224,10 @@ def process_tweet(tweet, settings, wait, driver):
             time.sleep(0.5)
         except: pass
         return False
-        
-def run_detweeter_logic(settings, log_queue): # main worker function that runs in a separate thread
-    sys.stdout = QueueWriter(log_queue) # redirect print statements to the GUI log
+
+def run_detweeter_logic(settings, log_queue, result_queue): # main worker function that runs in a separate thread
+    sys.stdout = QueueWriter(log_queue)
     driver = None
-    final_deleted_count = 0
     final_message = ""
     try:
         print("SETTINGS RECEIVED. BOOTING UP SELENIUM...")
@@ -242,13 +240,13 @@ def run_detweeter_logic(settings, log_queue): # main worker function that runs i
         else:  # chrome
             service = ChromeService(ChromeDriverManager().install())
             options = ChromeOptions()
-            print("Opening Chrome...")
             options.add_argument("--force-device-scale-factor=0.8")
+            print("Opening Chrome...")
             driver = webdriver.Chrome(service=service, options=options)
         driver.maximize_window()
         wait = WebDriverWait(driver, 10)
         if not login_to_twitter(driver, wait, settings["handle"], settings["password"]):
-            raise Exception("Login failed. Check credentials and try again.")
+            raise Exception("Login failed. Please check credentials and try again.")
         profile_url = f"https://x.com/{settings['handle']}/with_replies"
         print(f"Accessing {profile_url}...")
         driver.get(profile_url)
@@ -270,11 +268,13 @@ def run_detweeter_logic(settings, log_queue): # main worker function that runs i
             tweets_on_page = driver.find_elements(*LOCATORS["TWEET_ARTICLE"])
             if not tweets_on_page and stalls == 0:
                 print("No tweets found on initial load. Scrolling down to find some.")
-                stalls += 1
             found_new_tweet_this_pass = False
             for tweet in tweets_on_page:
                 try:
-                    permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
+                    permalink_element = WebDriverWait(tweet, 2).until(
+                        EC.presence_of_element_located(LOCATORS["TWEET_PERMALINK"])
+                    )
+                    permalink = permalink_element.get_attribute('href')
                     if permalink in processed_permalinks:
                         continue
                     found_new_tweet_this_pass = True
@@ -283,10 +283,11 @@ def run_detweeter_logic(settings, log_queue): # main worker function that runs i
                         deleted_count += 1
                         print(f"TWEET DELETED — TOTAL THIS SESSION: {deleted_count}")
                         time.sleep(1)
-                        break
-                except (NoSuchElementException, StaleElementReferenceException):
+                        break 
+                except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
+                    print("  - Could not process a tweet element, it may have been an ad or became stale. Skipping.")
                     continue
-            else:
+            else: 
                 if found_new_tweet_this_pass:
                     stalls = 0
                     print("Visible tweets have been processed/skipped. Scrolling down...")
@@ -298,50 +299,24 @@ def run_detweeter_logic(settings, log_queue): # main worker function that runs i
                     break
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(3)
-        print(f"DETWEETER COMPLETE — TOTAL: {deleted_count}")
-        final_deleted_count = deleted_count
-        final_message = f"Detweeter has finished.Total tweets deleted: {final_deleted_count}"
+        final_message = f"Detweeter has finished.\nTotal tweets deleted: {deleted_count}"
     
     except KeyboardInterrupt:
-        print("Script interrupted by user.")
+        print("\nScript interrupted by user.")
         final_message = "Operation cancelled by user."
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
         traceback.print_exc(file=sys.stdout)
-        final_message = f"A critical error occurred:\n{e}\nSee log for details."
+        final_message = f"A critical error occurred:\n{str(e)[:200]}\n\nSee log for details."
     finally:
         if driver:
             print("Closing browser...")
             driver.quit()
         print("Exiting Script.")
-        # pass final message to the main thread via the queue
-        log_queue.put(final_message)
-        # put the sentinel value to signal the end
-        log_queue.put(None)
-        # restore stdout
+        result_queue.put(final_message)
         sys.stdout = sys.__stdout__
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = DetweeterApp(root)
-    # hack to pass final message from thread to app instance, run_detweeter_logic thread will put final message string in queue before sentinel
-    def custom_process_finished(): # override the process finished to grab the final message, the last non-None item in queue
-        messages = []
-        while not app.log_queue.empty():
-            msg = app.log_queue.get_nowait()
-            if msg is not None:
-                messages.append(msg)
-            else: # found the sentinel
-                break
-        # display any remaining log messages
-        for msg in messages[:-1]:
-            app.display_log_message(msg)
-        if messages:
-            app.final_message = messages[-1]
-        app.toggle_widgets_state('normal')
-        if app.final_message:
-            messagebox.showinfo("Complete", app.final_message)
-        app.final_message = ""
-    # monkey-patch method to handle final message correctly
-    app.process_finished = custom_process_finished
     root.mainloop()
