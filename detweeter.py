@@ -39,12 +39,12 @@ LOCATORS = {
     "BODY": (By.TAG_NAME, 'body'),
 }
 
-class QueueWriter: # helper class to redirect stdout to a queue
+class QueueWriter: # helper to redirect stdout to a queue
     def __init__(self, queue):
         self.queue = queue
     def write(self, text):
         self.queue.put(text)
-    def flush(self): # needed for compatibility with sys.stdout
+    def flush(self): # needed for sys.stdout compatibility
         pass
 
 class DetweeterApp:
@@ -58,24 +58,22 @@ class DetweeterApp:
         BG_COLOR, FG_COLOR, BTN_COLOR = "#2c3e50", "#ecf0f1", "#2980b9"
         FONT_NORMAL, FONT_BOLD = ("Helvetica", 10), ("Helvetica", 16, "bold")
         self.root.title("DETWEETER")
-        try: # determine the base path, accounting for whether it's a script or a frozen exe
+        try: # determine base path, accounting for whether it's a script or a frozen exe
             if getattr(sys, 'frozen', False):
-                # if app is run as a bundle, PyInstaller bootloader extends sys module by a flag frozen=True and sets app path into variable _MEIPASS'
-                base_path = sys._MEIPASS
-            else:
-                base_path = os.path.dirname(os.path.abspath(__file__))
-            # construct the full path to the icon
+                base_path = sys._MEIPASS # if app is run as a bundle, PyInstaller bootloader extends sys module by flag frozen=True and sets app path into variable _MEIPASS'
+            else: # construct the full path to the icon
+                base_path = os.path.dirname(os.path.abspath(__file__)) 
             icon_path = os.path.join(base_path, 'icon.ico')
             self.root.iconbitmap(icon_path)
         except tk.TclError:
-            print("icon.ico not found or could not be loaded, using default icon.")
+            print("Intended icon.ico could not be loaded, using default fallback.")
         self.root.configure(bg=BG_COLOR)
-        # Settings Frame
+        # settings frame
         self.root.resizable(True, True)
         settings_frame = tk.Frame(self.root, padx=15, pady=15, bg=BG_COLOR)
         settings_frame.pack(expand=False, fill='x', side='top')
         tk.Label(settings_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg=FG_COLOR).grid(row=0, column=0, columnspan=2, pady=(0, 15))
-        # Browser Selection
+        # browser selection
         browser_frame = tk.Frame(settings_frame, bg=BG_COLOR)
         browser_frame.grid(row=1, column=1, sticky='w', pady=5)
         tk.Label(settings_frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=1, column=0, sticky='w', padx=5, pady=5)
@@ -84,7 +82,7 @@ class DetweeterApp:
         self.firefox_rb.pack(side='left')
         self.chrome_rb = tk.Radiobutton(browser_frame, text="Chrome", variable=self.browser_choice, value="Chrome", bg=BG_COLOR, fg=FG_COLOR, selectcolor=BG_COLOR, font=FONT_NORMAL, activebackground=BG_COLOR, activeforeground=FG_COLOR)
         self.chrome_rb.pack(side='left')
-        # Inputs and Labels
+        # inputs and labels
         tk.Label(settings_frame, text="Handle (@)", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=2, column=0, sticky='w', padx=5, pady=5)
         self.handle_entry = tk.Entry(settings_frame, width=30, font=FONT_NORMAL)
         self.handle_entry.grid(row=2, column=1, padx=5, pady=5)
@@ -95,10 +93,10 @@ class DetweeterApp:
         self.num_entry = tk.Entry(settings_frame, width=30, font=FONT_NORMAL)
         self.num_entry.grid(row=4, column=1, padx=5, pady=5)
         self.num_entry.insert(0, "10")
-        # Submit Button
+        # submit button
         self.submit_button = tk.Button(settings_frame, text="Start Deletion", command=self.start_deletion_process, font=("Helvetica", 10, "bold"), bg=BTN_COLOR, fg=FG_COLOR, relief='flat', activebackground="#3498db", activeforeground="white")
         self.submit_button.grid(row=5, column=0, columnspan=2, pady=20, ipadx=10, ipady=4)
-        # Log Frame
+        # log frame
         log_frame = tk.Frame(self.root, padx=15, pady=10, bg="#1e2732")
         log_frame.pack(expand=True, fill='both', side='bottom')
         log_frame.grid_rowconfigure(0, weight=1)
@@ -126,22 +124,18 @@ class DetweeterApp:
             'num_to_delete': num_to_delete,
             'browser': self.browser_choice.get()
         }
-        # disable GUI elements to prevent changes during operation
-        self.toggle_widgets_state('disabled')
-        # clear log widget
-        self.log_widget.config(state='normal')
+        self.toggle_widgets_state('disabled') # disable GUI elements to prevent changes during operation
+        self.log_widget.config(state='normal') # clear log widget
         self.log_widget.delete('1.0', tk.END)
         self.log_widget.config(state='disabled')
-        # start the worker thread
-        self.thread = threading.Thread(
+        self.thread = threading.Thread( # start the worker thread
             target=run_detweeter_logic, 
             args=(settings, self.log_queue, self.result_queue)
         )
         self.thread.daemon = True
         self.thread.start()
         self.poll_thread()
-    def poll_thread(self):
-        """Check the log queue and the thread status."""
+    def poll_thread(self): # check log queue and thread status
         while True: # drain log queue
             try:
                 message = self.log_queue.get_nowait()
@@ -163,7 +157,7 @@ class DetweeterApp:
             final_message = self.result_queue.get_nowait()
             if final_message:
                  messagebox.showinfo("Complete", final_message)
-        except queue.Empty: # this case can happen if thread crashed before sending a result
+        except queue.Empty: # can happen if thread crashes before sending a result
             messagebox.showwarning("Complete", "Process finished, but no final status was received.")
     def toggle_widgets_state(self, state):
         for widget in [self.handle_entry, self.password_entry, self.num_entry, 
@@ -175,15 +169,12 @@ def login_to_twitter(driver, wait, login_identifier, password):
     print(f"Navigating to login page using {browser_name}...")
     driver.get("https://x.com/login")
     try:
-        # Enter username
         print("Entering username...")
         username_field = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_IDENTIFIER_INPUT"]))
         username_field.send_keys(login_identifier)
-        # Click next
         print("Clicking next button...")
         next_button = wait.until(EC.element_to_be_clickable(LOCATORS["NEXT_BUTTON"]))
         driver.execute_script("arguments[0].click();", next_button)
-        # Enter password
         print("Entering password...")
         password_field = wait.until(EC.element_to_be_clickable(LOCATORS["PASSWORD_INPUT"]))
         password_field.send_keys(password)
@@ -193,36 +184,24 @@ def login_to_twitter(driver, wait, login_identifier, password):
             login_button = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_BUTTON"]))
             driver.execute_script("arguments[0].click();", login_button)
             print("Login command sent.")
-        except Exception as e:
-            # This is expected in Chrome. The page navigates away, making the
-            # driver context stale, which can throw an error. We safely ignore it.
-            print(f"Ignoring expected error after login click: {type(e).__name__}")
+        except Exception as e: # this is a consistent error, but the script catches a few seconds later and continues
+            print(f"Initial login failed, but script will continue: {type(e).__name__}")
     except Exception as e:
-        print(f"A fatal error occurred before the final login click: {e}")
+        print(f"Fatal error occurred before final login click: {e}")
         return False
-    # Now, patiently poll for success instead of using one rigid wait.
     print("Verifying login by polling for home page elements...")
     max_attempts = 15  # 15 attempts * 2 seconds = 30 second timeout
     for attempt in range(max_attempts):
         print(f"  Login check attempt {attempt + 1}/{max_attempts}...")
-        # Use our robust, multi-element check.
-        if check_login_success(driver, browser_name):
+        if check_login_success(driver, browser_name): # robust multi-element check.
             print("✓ Login successful!")
             return True
-        time.sleep(2)  # Wait before retrying
-    # If the loop finishes, login has genuinely failed.
-    print("\n--- LOGIN FAILED ---")
-    print("Automated login timed out. The home page did not appear.")
-    print("This could be due to incorrect credentials, a CAPTCHA, or a new verification step.")
-    print("Please check the browser window and try again.")
+        time.sleep(2)  # pause before retrying
+    print("--- LOGIN FAILED ---") # if loop finishes, login has genuinely failed
+    print("Please try again or use another browser. If no luck, send me a message and I'll fix it.")
     return False
 
-def check_login_success(driver, browser_name):
-    """
-    Checks for multiple indicators of a successful login. This is designed
-    to be called repeatedly in a polling loop.
-    """
-    # Short-circuit if we're obviously still on a login/error page.
+def check_login_success(driver, browser_name): # checks for multiple indicators of a successful login
     current_url = driver.current_url.lower()
     if 'login' in current_url or 'error' in current_url:
         return False
@@ -235,15 +214,12 @@ def check_login_success(driver, browser_name):
     ]
     for check_name, locator in success_checks:
         try:
-            # We don't need a long wait here, just check if the element is present *now*.
-            elements = driver.find_elements(*locator)
+            elements = driver.find_elements(*locator) # don't need a long wait, just check if element is present
             if elements:
-                # Extra check for visibility
-                if any(el.is_displayed() for el in elements):
+                if any(el.is_displayed() for el in elements): # extra check for visibility
                     print(f"  ✓ Success indicator found: {check_name}")
                     return True
-        except Exception:
-            # Ignore errors like StaleElement, just means the page is still changing.
+        except Exception: # ignore errors like StaleElement which just indicate page is still changing
             continue
     return False
 def process_tweet(tweet, settings, wait, driver):
