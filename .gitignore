@@ -1,0 +1,18 @@
+# .gitignore
+
+# --- Secrets ---
+# Ignore the file containing actual credentials
+.env
+
+# --- Python ---
+# Ignore virtual environment folders
+.venv/
+venv/
+
+# Ignore Python bytecode and cache
+__pycache__/
+*.pyc
+
+# --- IDE/Editor ---
+# Ignore VS Code specific settings
+.vscode/
