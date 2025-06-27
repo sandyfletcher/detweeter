@@ -5,12 +5,15 @@ from tkinter import messagebox
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from webdriver_manager.firefox import GeckoDriverManager
+from webdriver_manager.chrome import ChromeDriverManager
 
 LOCATORS = {
     "LOGIN_IDENTIFIER_INPUT": (By.NAME, "text"),
@@ -29,21 +32,17 @@ LOCATORS = {
 }
 
 def create_gui_and_get_settings():
-    """Creates a tkinter GUI window to get user settings."""
-    
     # This dictionary will hold our settings
+    """Creates a styled tkinter GUI window to get user settings."""
     settings = {}
-    
     # This function is called when the "Start" button is clicked
     def on_submit():
         handle = handle_entry.get().strip().lstrip('@')
         password = password_entry.get()
         num_str = num_entry.get()
-
         if not handle or not password:
             messagebox.showerror("Error", "Handle and Password are required.")
             return
-            
         try:
             num_to_delete = int(num_str)
             if num_to_delete < 0:
@@ -52,54 +51,52 @@ def create_gui_and_get_settings():
         except ValueError:
             messagebox.showerror("Error", "Number to delete must be a valid integer.")
             return
-        
         # Store valid settings in the dictionary
         settings['handle'] = handle
         settings['password'] = password
         settings['num_to_delete'] = num_to_delete
-        
         # Close the window
+        settings['browser'] = browser_choice.get()
         root.destroy()
 
-    # --- GUI Layout ---
+    BG_COLOR = "#2c3e50"
+    FG_COLOR = "#ecf0f1"
+    BTN_COLOR = "#2980b9"
+    FONT_NORMAL = ("Helvetica", 10)
+    FONT_BOLD = ("Helvetica", 16, "bold")
+
     root = tk.Tk()
-    root.title("Detweeter Setup")
-    root.geometry("350x200") # Set window size
-    root.resizable(False, False) # Make window not resizable
-
-    frame = tk.Frame(root, padx=10, pady=10)
+    root.title("DETWEETER")
+    root.iconbitmap('icon.ico')
+    root.configure(bg=BG_COLOR)
+    root.resizable(False, False)
+    frame = tk.Frame(root, padx=15, pady=15, bg=BG_COLOR)
     frame.pack(expand=True, fill='both')
-
-    # Title
-    tk.Label(frame, text="DETWEETER", font=("Helvetica", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=(0, 10))
-
+    tk.Label(frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg=FG_COLOR).grid(row=0, column=0, columnspan=2, pady=(0, 15))
+    # Browser Selection
+    browser_frame = tk.Frame(frame, bg=BG_COLOR)
+    browser_frame.grid(row=1, column=1, sticky='w', pady=5)
+    tk.Label(frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=1, column=0, sticky='w', padx=5, pady=5)
+    browser_choice = tk.StringVar(value="Firefox")
+    tk.Radiobutton(browser_frame, text="Firefox", variable=browser_choice, value="Firefox", bg=BG_COLOR, fg=FG_COLOR, selectcolor=BG_COLOR, font=FONT_NORMAL, activebackground=BG_COLOR, activeforeground=FG_COLOR).pack(side='left')
+    tk.Radiobutton(browser_frame, text="Chrome", variable=browser_choice, value="Chrome", bg=BG_COLOR, fg=FG_COLOR, selectcolor=BG_COLOR, font=FONT_NORMAL, activebackground=BG_COLOR, activeforeground=FG_COLOR).pack(side='left')
     # Inputs and Labels
-    tk.Label(frame, text="Handle (@)").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-    handle_entry = tk.Entry(frame, width=30)
-    handle_entry.grid(row=1, column=1, padx=5, pady=5)
-
-    tk.Label(frame, text="Password").grid(row=2, column=0, sticky='w', padx=5, pady=5)
-    password_entry = tk.Entry(frame, show="*", width=30)
-    password_entry.grid(row=2, column=1, padx=5, pady=5)
-
-    tk.Label(frame, text="Number to Delete").grid(row=3, column=0, sticky='w', padx=5, pady=5)
-    num_entry = tk.Entry(frame, width=30)
-    num_entry.grid(row=3, column=1, padx=5, pady=5)
-    num_entry.insert(0, "10") # Default value
-
-    tk.Label(frame, text="Enter 0 to delete all unbookmarked tweets.", font=("Helvetica", 8)).grid(row=4, column=1, sticky='w', padx=5)
-
+    tk.Label(frame, text="Handle (@)", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=2, column=0, sticky='w', padx=5, pady=5)
+    handle_entry = tk.Entry(frame, width=30, font=FONT_NORMAL)
+    handle_entry.grid(row=2, column=1, padx=5, pady=5)
+    tk.Label(frame, text="Password", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=3, column=0, sticky='w', padx=5, pady=5)
+    password_entry = tk.Entry(frame, show="*", width=30, font=FONT_NORMAL)
+    password_entry.grid(row=3, column=1, padx=5, pady=5)
+    tk.Label(frame, text="Number to Delete", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=4, column=0, sticky='w', padx=5, pady=5)
+    num_entry = tk.Entry(frame, width=30, font=FONT_NORMAL)
+    num_entry.grid(row=4, column=1, padx=5, pady=5)
+    num_entry.insert(0, "10")
     # Submit Button
-    submit_button = tk.Button(frame, text="Start Deletion", command=on_submit, bg='green', fg='white')
-    submit_button.grid(row=5, column=0, columnspan=2, pady=15)
-
-    # Start the GUI event loop
+    submit_button = tk.Button(frame, text="Start Deletion", command=on_submit, font=("Helvetica", 10, "bold"), bg=BTN_COLOR, fg=FG_COLOR, relief='flat', activebackground="#3498db", activeforeground="white")
+    submit_button.grid(row=5, column=0, columnspan=2, pady=20, ipadx=10, ipady=4)
     root.mainloop()
-    
-    # Return the settings dictionary (or an empty one if the window was closed)
     return settings if 'handle' in settings else None
 
-# login_to_twitter and process_tweet functions remain identical
 def login_to_twitter(driver, wait, login_identifier, password):
     print("Navigating to login page...")
     driver.get("https://x.com/login")
@@ -127,19 +124,16 @@ def login_to_twitter(driver, wait, login_identifier, password):
         except TimeoutException:
             print("Could not manually confirm login. Exiting.")
             return False
-        
-def process_tweet(tweet, settings, wait, driver): # check if tweet is eligible for deletion (authored by user, not bookmarked) and attempts to delete it. Returns True if deleted, False otherwise.
+
+def process_tweet(tweet, settings, wait, driver):
     try:
-        # check 1: is it our tweet?
         author_handle = tweet.find_element(*LOCATORS["TWEET_AUTHOR_HANDLE"]).text[1:]
         if author_handle.lower() != settings['handle'].lower():
-            return False # not our tweet, skip
-        # check 2: is it bookmarked?
+            return False
         if tweet.find_elements(*LOCATORS["BOOKMARK_BUTTON_EXISTS"]):
             permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
             print(f"Skipped (bookmarked): {permalink}")
             return False
-        # if all checks pass, it qualifies — proceed with deletion
         permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
         print(f"QUALIFIES FOR DELETION: {permalink}")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", tweet)
@@ -158,19 +152,28 @@ def process_tweet(tweet, settings, wait, driver): # check if tweet is eligible f
         time.sleep(0.5)
         return False
 
+
 if __name__ == "__main__":
     settings = create_gui_and_get_settings()
     if not settings:
         print("Operation cancelled by user. Exiting.")
         sys.exit()
-    print("SETTINGS RECEIVED. BOOTING UP SELENIUM — PRESS CTRL+C IN THIS WINDOW TO ABORT")
+    # Use --console flag to see these print statements in the packaged app
+    print("SETTINGS RECEIVED. BOOTING UP SELENIUM...")
     driver = None
     try:
-        service = FirefoxService(GeckoDriverManager().install())
-        firefox_options = FirefoxOptions()
-        firefox_options.set_preference("layout.css.devPixelsPerPx", "0.8")
-        print("Opening Firefox...")
-        driver = webdriver.Firefox(service=service, options=firefox_options)
+        if settings['browser'] == "Firefox":
+            service = FirefoxService(GeckoDriverManager().install())
+            options = FirefoxOptions()
+            options.set_preference("layout.css.devPixelsPerPx", "0.8")
+            print("Opening Firefox...")
+            driver = webdriver.Firefox(service=service, options=options)
+        else:  # Chrome
+            service = ChromeService(ChromeDriverManager().install())
+            options = ChromeOptions()
+            # You can add Chrome-specific options here, e.g., options.add_argument("--headless")
+            print("Opening Chrome...")
+            driver = webdriver.Chrome(service=service, options=options)
         driver.maximize_window()
         wait = WebDriverWait(driver, 10)
         if not login_to_twitter(driver, wait, settings["handle"], settings["password"]):
@@ -229,16 +232,19 @@ if __name__ == "__main__":
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(3)
         print(f"DETWEETER COMPLETE — TOTAL: {deleted_count}")
+        messagebox.showinfo("Complete", f"Detweeter has finished.\n\nTotal tweets deleted: {deleted_count}")
+
     except KeyboardInterrupt:
         print("Script interrupted by user.")
     except Exception as e:
         print(f"Critical error: {e}")
         import traceback
         traceback.print_exc()
-        messagebox.showerror("Critical Error", f"A critical error occurred:\n\n{e}\n\nSee console for details.")
+        messagebox.showerror("Critical Error", f"A critical error occurred:\n\n{e}\n\nSee console for details if available.")
+
     finally:
         if driver:
-            print("Closing Firefox.")
+            print("Closing browser.")
             driver.quit()
         print("Exiting Script.")
-        time.sleep(1)
+        time.sleep(1) # give user time to read final messages
