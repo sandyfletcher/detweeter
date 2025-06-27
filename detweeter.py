@@ -166,7 +166,7 @@ class DetweeterApp:
 
 def login_to_twitter(driver, wait, login_identifier, password):
     browser_name = driver.capabilities.get('browserName', 'unknown')
-    print(f"Navigating to login page using {browser_name}...")
+    print(f"Navigating to login...")
     driver.get("https://x.com/login")
     try:
         print("Entering username...")
@@ -184,22 +184,21 @@ def login_to_twitter(driver, wait, login_identifier, password):
             driver.execute_script("arguments[0].click();", login_button)
             print("Login command sent.")
         except Exception as e:
-            print(f"Login click action was interrupted (e.g., by page navigation). This is expected. Proceeding to verification.")
+            print(f"Login interrupted by page navigation.")
     except Exception as e: # if an exception happens anywhere else in the login sequence (e.g., can't find username field), it's a genuine failure
         print(f"Fatal error occurred during login input sequence: {e}")
         return False
-    # This verification block is the single source of truth for login success.
-    # It runs regardless of whether the final click was "confirmed" or threw an exception.
-    print("Verifying login by polling for home page elements...")
-    max_attempts = 15  # 15 attempts * 2 seconds = 30 second timeout
+    print("Checking page elements to verify login...")
+    max_attempts = 5  # *(1+1) = 10 second timeout
     for attempt in range(max_attempts):
+        time.sleep(1)  # pause initially
         print(f"  Login check attempt {attempt + 1}/{max_attempts}...")
-        if check_login_success(driver, browser_name): # robust multi-element check.
+        if check_login_success(driver, browser_name): # robust multi-element check
             print("✓ Login successful!")
             return True
-        time.sleep(2)  # pause before retrying
-    print("--- LOGIN FAILED ---") # if loop finishes, login has genuinely failed
-    print("Login verification failed. Could not find home page elements after attempting to log in.")
+        time.sleep(1)  # pause before retrying
+    print("--- LOGIN FAILED ---") # if loop finishes login has genuinely failed
+    print("Login verification failed. Please check submitted credentials and try again.")
     return False
 
 def check_login_success(driver, browser_name): # checks for multiple indicators of a successful login
@@ -215,12 +214,12 @@ def check_login_success(driver, browser_name): # checks for multiple indicators 
     ]
     for check_name, locator in success_checks:
         try:
-            elements = driver.find_elements(*locator) # don't need a long wait, just check if element is present
+            elements = driver.find_elements(*locator) # check if element is present
             if elements:
                 if any(el.is_displayed() for el in elements): # extra check for visibility
                     print(f"  ✓ Success indicator found: {check_name}")
                     return True
-        except Exception: # ignore errors like StaleElement which just indicate page is still changing
+        except Exception: # ignore errors like StaleElement which indicate page is changing
             continue
     return False
 
@@ -258,7 +257,7 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
     driver = None
     final_message = ""
     try:
-        print("SETTINGS RECEIVED. BOOTING UP SELENIUM...")
+        print("Request received. Loading...")
         if settings['browser'] == "Firefox":
             service = FirefoxService(GeckoDriverManager().install())
             options = FirefoxOptions()
@@ -280,18 +279,18 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
         driver.maximize_window()
         wait = WebDriverWait(driver, 10)
         if not login_to_twitter(driver, wait, settings["handle"], settings["password"]):
-            raise Exception("Login failed. Please check credentials, solve any CAPTCHAs, and try again.")
+            raise Exception("Login failed. Please check credentials and try again.")
         profile_url = f"https://x.com/{settings['handle']}/with_replies"
-        print(f"Accessing {profile_url}...")
+        print(f"Navigating to user profile...")
         driver.get(profile_url)
         long_wait = WebDriverWait(driver, 20)
         long_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, f"a[href='/{settings['handle']}']")))
         print("DETWEETION COMMENCING...")
         time.sleep(2)
         if settings["num_to_delete"] == 0:
-            print("Infinite Mode — deleting ALL unbookmarked tweets.")
+            print("∞ MODE — ALL unbookmarked tweets.")
         else:
-            print(f"Finite Mode — deleting {settings['num_to_delete']} most recent unbookmarked tweets.")
+            print(f"# MODE — {settings['num_to_delete']} most recent unbookmarked tweets.")
         deleted_count = 0
         processed_permalinks = set()
         stalls = 0
@@ -305,7 +304,7 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
             found_new_tweet_this_pass = False
             for tweet in tweets_on_page:
                 if settings["num_to_delete"] > 0 and deleted_count >= settings["num_to_delete"]:
-                    break # check again in case inner loop reached the target
+                    break # check again in case inner loop reached target
                 try:
                     permalink_element = WebDriverWait(tweet, 2).until(
                         EC.presence_of_element_located(LOCATORS["TWEET_PERMALINK"])
@@ -318,33 +317,32 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
                     if process_tweet(tweet, settings, wait, driver):
                         deleted_count += 1
                         print(f"TWEET DELETED — TOTAL THIS SESSION: {deleted_count}")
-                        time.sleep(0.5) # small pause for UI to settle after deletion
+                        time.sleep(0.5) # small pause for UI to settle
                 except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
-                    print("  - Could not process a tweet element, it may have been an ad or became stale. Skipping.")
+                    print("  - Could not process a tweet element, may have become stale or been an ad.")
                     continue
-            else: # for the 'for' loop - it runs if loop completes without a 'break'
+            else: # runs if the for loop completes without a break
                 if found_new_tweet_this_pass:
                     stalls = 0
                     print("Visible tweets have been processed. Scrolling...")
                 else:
                     stalls += 1
-                    print(f"No new tweets found. Stall count: {stalls}/3")
                 if stalls >= 3:
                     print("Scrolling has repeatedly stalled — assuming end of timeline.")
                     break
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(3)
-        final_message = f"DETWEETER COMPLETE\nDELETED: {deleted_count}"       
+        final_message = f"{deleted_count} TWEETS DELETED"       
     except KeyboardInterrupt:
         print("Script interrupted by user.")
         final_message = "Operation cancelled by user."
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
         traceback.print_exc(file=sys.stdout)
-        final_message = f"A critical error occurred:\n{str(e)[:200]}\nSee log for details."
+        final_message = f"CRITICAL ERROR:\n{str(e)[:200]}"
     finally:
         if driver:
-            print("Closing browser and exiting script.")
+            print("Closing browser, exiting script.")
             driver.quit()
         result_queue.put(final_message)
         sys.stdout = sys.__stdout__
