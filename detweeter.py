@@ -2,13 +2,10 @@ import os
 import sys
 import time
 import queue
+import ctypes
 import threading
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
-try:
-    import pyglet
-except ImportError:
-    pyglet = None # allows script to run without pyglet with a fallback.
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
@@ -57,12 +54,23 @@ class DetweeterApp:
         self.thread = None
         self.log_queue = queue.Queue()
         self.result_queue = queue.Queue()
+        self.loaded_font_paths = [] # track loaded fonts for cleanup
         self.validate_handle_cmd = (self.root.register(self._validate_length), '%P', 15) # handles are <= 15 chars
         self.validate_password_cmd = (self.root.register(self._validate_length), '%P', 50) # passwords are <= 50 chars
         self.validate_num_cmd = (self.root.register(self._validate_numeric), '%P', 4) # limit to 4 digits (9,999)
         self.setup_gui()
         self.root.grid_rowconfigure(1, weight=1) # configure main window resizing behavior
         self.root.grid_columnconfigure(0, weight=1)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+    def _on_closing(self): # cleanup handler for when application window is closed
+        if sys.platform == 'win32' and self.loaded_font_paths:
+            gdi32 = ctypes.windll.gdi32
+            for font_path in self.loaded_font_paths:
+                if gdi32.RemoveFontResourceW(font_path):
+                     print(f"Successfully unloaded font: {os.path.basename(font_path)}")
+                else:
+                     print(f"Warning: Failed to unload font: {os.path.basename(font_path)}")
+        self.root.destroy()
     def _validate_length(self, proposed_text, max_len):
         return len(proposed_text) <= int(max_len)
     def _validate_numeric(self, proposed_text, max_len):
@@ -77,48 +85,36 @@ class DetweeterApp:
         BTN_COLOR = "#61afef"
         BTN_HOVER_COLOR = "#528bcf"
         FONT_MONO = ("Consolas", 10)
-        # Determine base path for assets like icon and fonts
-        base_path = ""
+        base_path = "" # determine base path for icon and fonts
         try: 
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS
             else:
                 base_path = os.path.dirname(os.path.abspath(__file__))
-            
             icon_path = os.path.join(base_path, 'icon.ico')
             self.root.iconbitmap(icon_path)
         except tk.TclError:
             print("Intended icon.ico could not be loaded, using default fallback.")
         except Exception as e:
             print(f"Could not determine base path: {e}")
-        # Define fallback fonts first.
-        title_font_family = "Segoe UI"
+        title_font_family = "Segoe UI" # define fallback fonts first.
         body_font_family = "Segoe UI"
-        if pyglet and base_path:
+        if base_path:
             title_font_path = os.path.join(base_path, 'assets', 'RubikDirt.ttf')
             body_font_path = os.path.join(base_path, 'assets', 'StintUltraExpanded.ttf')
-            if os.path.exists(title_font_path): # check for and load title font
-                try:
-                    pyglet.font.add_file(title_font_path)
-                    title_font_family = "Rubik Dirt"
-                    print(f"Successfully loaded title font: {title_font_family}")
-                except Exception as e:
-                    print(f"Error loading title font file '{title_font_path}'. Using default. Error: {e}")
-            else:
-                print(f"Title font not found at '{title_font_path}'. Using default.")
-
-            if os.path.exists(body_font_path): # check for and load body font
-                try:
-                    pyglet.font.add_file(body_font_path)
-                    body_font_family = "Stint Ultra Expanded"
-                    print(f"Successfully loaded body font: {body_font_family}")
-                except Exception as e:
-                    print(f"Error loading body font file '{body_font_path}'. Using default. Error: {e}")
-            else:
-                print(f"Body font not found at '{body_font_path}'. Using default.")
-        elif not pyglet:
-            print("pyglet not found. To use custom fonts, run: pip install pyglet. Using default fonts.")
-        # Define final fonts based on what was loaded
+            if sys.platform == 'win32':
+                gdi32 = ctypes.windll.gdi32
+                if os.path.exists(title_font_path):
+                    if gdi32.AddFontResourceW(title_font_path) > 0:
+                        title_font_family = "Rubik Dirt"
+                        self.loaded_font_paths.append(title_font_path)
+                        print(f"Successfully loaded font via GDI: {title_font_family}")
+                if os.path.exists(body_font_path):
+                    if gdi32.AddFontResourceW(body_font_path) > 0:
+                        body_font_family = "Stint Ultra Expanded"
+                        self.loaded_font_paths.append(body_font_path)
+                        print(f"Successfully loaded font via GDI: {body_font_family}")
+        # define final fonts based on what was loaded
         FONT_NORMAL = (body_font_family, 10)
         FONT_BOLD = (title_font_family, 18)
         self.root.title("DETWEETER")
@@ -175,7 +171,8 @@ class DetweeterApp:
         self.num_entry.insert(0, "10")
         tk.Label(controls_frame, text="tweets", **label_style).pack(side='left', padx=5)
         # submit button
-        self.submit_button = tk.Button(content_frame, text="Start Deletion", command=self.start_deletion_process, font=(body_font_family, 10, "bold"), bg=BTN_COLOR, fg="white", relief='flat', borderwidth=0, activebackground=BTN_HOVER_COLOR, activeforeground="white")
+        button_font = (body_font_family, 10)
+        self.submit_button = tk.Button(content_frame, text="Start Deletion", command=self.start_deletion_process, font=button_font, bg=BTN_COLOR, fg="white", relief='flat', borderwidth=0, activebackground=BTN_HOVER_COLOR, activeforeground="white")
         self.submit_button.grid(row=6, column=0, columnspan=2, pady=30, ipadx=10, ipady=5, sticky='ew')
         # log frame uses grid for resizing
         log_frame = tk.Frame(self.root, padx=10, pady=10, bg=LOG_BG_COLOR)
