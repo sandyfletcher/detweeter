@@ -53,9 +53,18 @@ class DetweeterApp:
         self.thread = None
         self.log_queue = queue.Queue()
         self.result_queue = queue.Queue()
+        self.validate_handle_cmd = (self.root.register(self._validate_length), '%P', 15) # handles are <= 15 chars
+        self.validate_password_cmd = (self.root.register(self._validate_length), '%P', 50) # passwords are <= 50 chars
+        self.validate_num_cmd = (self.root.register(self._validate_numeric), '%P', 4) # limit to 4 digits (9,999)
         self.setup_gui()
         self.root.grid_rowconfigure(1, weight=1) # configure main window resizing behavior
         self.root.grid_columnconfigure(0, weight=1)
+    def _validate_length(self, proposed_text, max_len):
+        return len(proposed_text) <= int(max_len)
+    def _validate_numeric(self, proposed_text, max_len):
+        if len(proposed_text) > int(max_len):
+            return False
+        return proposed_text == "" or proposed_text.isdigit()
     def setup_gui(self): # styling
         BG_COLOR = "#282c34"
         FG_COLOR = "#abb2bf"
@@ -68,7 +77,7 @@ class DetweeterApp:
         FONT_BOLD = (FONT_FAMILY, 16, "bold")
         FONT_MONO = ("Consolas", 10)
         self.root.title("DETWEETER")
-        self.root.minsize(550, 650)
+        self.root.minsize(550, 700)
         try: # determine base path, accounting for whether it's a script or exe
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS # if app is run as a bundle, PyInstaller bootloader extends sys module by flag frozen=True and sets app path into variable _MEIPASS'
@@ -83,11 +92,14 @@ class DetweeterApp:
         settings_frame.grid(row=0, column=0, sticky="ew") # expand east-west
         settings_frame.grid_columnconfigure(1, weight=1) # allow widgets column to expand
         # title
-        tk.Label(settings_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg="white").grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        tk.Label(settings_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg="white").grid(row=0, column=0, columnspan=2, pady=(0, 10))
+        # instructional text
+        info_text = "This tool automates deleting your tweets. Specify your credentials and choose to delete a specific number of recent tweets or all of them. Tweets you have bookmarked will be skipped. Use with caution."
+        tk.Label(settings_frame, text=info_text, font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR, wraplength=480, justify='left').grid(row=1, column=0, columnspan=2, pady=(0, 20))
         # browser selection
-        tk.Label(settings_frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=1, column=0, sticky='w', padx=5, pady=10)
+        tk.Label(settings_frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=2, column=0, sticky='w', padx=5, pady=10)
         browser_frame = tk.Frame(settings_frame, bg=BG_COLOR)
-        browser_frame.grid(row=1, column=1, sticky='w', pady=5)
+        browser_frame.grid(row=2, column=1, sticky='w', pady=5)
         self.browser_choice = tk.StringVar(value="Firefox")
         # radio buttons
         rb_style = {'bg': BG_COLOR, 'fg': FG_COLOR, 'selectcolor': BG_COLOR, 'font': FONT_NORMAL,'activebackground': BG_COLOR, 'activeforeground': 'white', 'highlightthickness': 0, 'borderwidth': 0}
@@ -98,19 +110,32 @@ class DetweeterApp:
         # input fields and labels
         entry_style = {'width': 35, 'font': FONT_NORMAL, 'bg': ENTRY_BG_COLOR, 'fg': FG_COLOR, 'relief': 'flat', 'insertbackground': FG_COLOR}
         label_style = {'font': FONT_NORMAL, 'bg': BG_COLOR, 'fg': FG_COLOR}
-        tk.Label(settings_frame, text="Handle (@)", **label_style).grid(row=2, column=0, sticky='w', padx=5, pady=10)
-        self.handle_entry = tk.Entry(settings_frame, **entry_style)
-        self.handle_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        tk.Label(settings_frame, text="Password", **label_style).grid(row=3, column=0, sticky='w', padx=5, pady=10)
-        self.password_entry = tk.Entry(settings_frame, show="*", **entry_style)
-        self.password_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
-        tk.Label(settings_frame, text="Number to Delete", **label_style).grid(row=4, column=0, sticky='w', padx=5, pady=10)
-        self.num_entry = tk.Entry(settings_frame, **entry_style)
-        self.num_entry.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
+        tk.Label(settings_frame, text="Handle (@)", **label_style).grid(row=3, column=0, sticky='w', padx=5, pady=10)
+        self.handle_entry = tk.Entry(settings_frame, **entry_style, validate='key', validatecommand=self.validate_handle_cmd)
+        self.handle_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
+        tk.Label(settings_frame, text="Password", **label_style).grid(row=4, column=0, sticky='w', padx=5, pady=10)
+        self.password_entry = tk.Entry(settings_frame, show="*", **entry_style, validate='key', validatecommand=self.validate_password_cmd)
+        self.password_entry.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
+        # deletion modes frame
+        delete_frame = tk.Frame(settings_frame, bg=BG_COLOR)
+        delete_frame.grid(row=5, column=0, columnspan=2, sticky='ew', pady=10)
+        delete_frame.grid_columnconfigure(1, weight=1)
+        tk.Label(delete_frame, text="Mode", **label_style).grid(row=0, column=0, sticky='w', padx=5)
+        controls_frame = tk.Frame(delete_frame, bg=BG_COLOR)
+        controls_frame.grid(row=0, column=1, sticky='ew')
+        self.delete_all_var = tk.BooleanVar(value=False)
+        self.delete_all_cb = tk.Checkbutton(controls_frame, text="Delete All (∞)", variable=self.delete_all_var, command=self.toggle_num_entry_state, **rb_style)
+        self.delete_all_cb.pack(side='left', padx=5)
+        tk.Label(controls_frame, text="or, the last", **label_style).pack(side='left', padx=(15, 5))
+        num_entry_style = entry_style.copy()
+        num_entry_style['width'] = 8
+        self.num_entry = tk.Entry(controls_frame, **num_entry_style, validate='key', validatecommand=self.validate_num_cmd)
+        self.num_entry.pack(side='left')
         self.num_entry.insert(0, "10")
+        tk.Label(controls_frame, text="tweets", **label_style).pack(side='left', padx=5)
         # submit button
         self.submit_button = tk.Button(settings_frame, text="Start Deletion", command=self.start_deletion_process, font=(FONT_FAMILY, 10, "bold"), bg=BTN_COLOR, fg="white", relief='flat', borderwidth=0, activebackground=BTN_HOVER_COLOR, activeforeground="white")
-        self.submit_button.grid(row=5, column=0, columnspan=2, pady=25, ipadx=10, ipady=5, sticky='ew')
+        self.submit_button.grid(row=6, column=0, columnspan=2, pady=25, ipadx=10, ipady=5, sticky='ew')
         # log frame uses grid for resizing
         log_frame = tk.Frame(self.root, padx=10, pady=10, bg=LOG_BG_COLOR)
         log_frame.grid(row=1, column=0, sticky='nsew') # 'nsew' = expand in all directions
@@ -118,22 +143,33 @@ class DetweeterApp:
         log_frame.grid_columnconfigure(0, weight=1)
         self.log_widget = scrolledtext.ScrolledText(log_frame, state='disabled', wrap=tk.WORD, bg=LOG_BG_COLOR, fg=FG_COLOR, font=FONT_MONO, relief='flat', borderwidth=0)
         self.log_widget.grid(row=0, column=0, sticky='nsew')
-
+    def toggle_num_entry_state(self):
+        if self.delete_all_var.get():
+            self.num_entry.config(state='disabled')
+        else:
+            self.num_entry.config(state='normal')
     def start_deletion_process(self):
         handle = self.handle_entry.get().strip().lstrip('@')
         password = self.password_entry.get()
-        num_str = self.num_entry.get()
         if not handle or not password:
             messagebox.showerror("Error", "Handle and Password are required.")
             return
-        try:
-            num_to_delete = int(num_str)
-            if num_to_delete < 0:
-                messagebox.showerror("Error", "Number to delete must be a positive integer or 0.")
+        num_to_delete = -1 # Sentinel value
+        if self.delete_all_var.get():
+            num_to_delete = 0 # 0 signifies "all" mode
+        else:
+            num_str = self.num_entry.get()
+            if not num_str:
+                messagebox.showerror("Error", "Please enter a number of tweets to delete.")
                 return
-        except ValueError:
-            messagebox.showerror("Error", "Number to delete must be a valid integer.")
-            return
+            try:
+                num_to_delete = int(num_str)
+                if num_to_delete <= 0:
+                    messagebox.showerror("Error", "Number to delete must be a positive integer. To delete all, use the checkbox.")
+                    return
+            except ValueError:
+                messagebox.showerror("Error", "Number to delete must be a valid integer.")
+                return
         settings = {
             'handle': handle,
             'password': password,
@@ -169,6 +205,7 @@ class DetweeterApp:
         self.log_widget.config(state='disabled')
     def process_finished(self): # called when worker thread is complete
         self.toggle_widgets_state('normal')
+        self.toggle_num_entry_state() # ensure num_entry state is correct based on checkbox
         try: # get final result from the dedicated result queue
             final_message = self.result_queue.get_nowait()
             if final_message:
@@ -177,7 +214,7 @@ class DetweeterApp:
             messagebox.showwarning("Complete", "Process finished, but no final status was received.")
     def toggle_widgets_state(self, state):
         for widget in [self.handle_entry, self.password_entry, self.num_entry, 
-                       self.submit_button, self.firefox_rb, self.chrome_rb]:
+                       self.submit_button, self.firefox_rb, self.chrome_rb, self.delete_all_cb]:
             widget.config(state=state)
 
 def login_to_twitter(driver, wait, login_identifier, password):
