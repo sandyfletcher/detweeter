@@ -179,10 +179,9 @@ def login_to_twitter(driver, wait, login_identifier, password):
         password_field.send_keys(password)
         login_button = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_BUTTON"]))
         driver.execute_script("arguments[0].click();", login_button)
-        print("Waiting for login to complete (URL change)...")
-        WebDriverWait(driver, 20).until(EC.url_contains("home"))
-        print("Waiting for home feed to confirm login...")
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))
+        print("Waiting for home feed to load after login...")
+        long_wait = WebDriverWait(driver, 30)
+        long_wait.until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))        
         print("Home feed detected. Login successful.")
         return True
     except Exception:
@@ -190,6 +189,7 @@ def login_to_twitter(driver, wait, login_identifier, password):
         print("Log in manually, script will re-check for home feed in 30 seconds to continue...")
         time.sleep(10) # give time to read
         try:
+            # keep manual check as a fallback
             WebDriverWait(driver, 30).until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))
             print("Login confirmed manually.")
             return True
