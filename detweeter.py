@@ -167,7 +167,7 @@ if __name__ == "__main__":
                     processed_permalinks.add(permalink)
                     if process_tweet(tweet, settings, wait, driver):
                         deleted_count += 1
-                        print(f"TWEET DELETED — TOTAL THIS SESSION: {deleted_count}\n")
+                        print(f"TWEET DELETED — TOTAL THIS SESSION: {deleted_count}")
                         time.sleep(1) # pause for UI to settle after deletion
                         break # re-scan from the top after a successful deletion
                 except (NoSuchElementException, StaleElementReferenceException):
@@ -178,7 +178,7 @@ if __name__ == "__main__":
                     print("Visible tweets have been processed. Scrolling...")
                 else:
                     stalls += 1
-                    print(f"No eligible tweets found. Scrolling stall count: {stalls}/3)")
+                    print(f"No eligible tweets found. Scrolling stall count: {stalls}/3")
                 if stalls >= 3:
                     print("Scroll has repeatedly stalled — assuming end of timeline.")
                     break
