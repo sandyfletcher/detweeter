@@ -1,3 +1,7 @@
+import sys
+import time
+import tkinter as tk
+from tkinter import messagebox
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
@@ -7,10 +11,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from webdriver_manager.firefox import GeckoDriverManager
-import time
-import os
-import getpass
-from dotenv import load_dotenv
 
 LOCATORS = {
     "LOGIN_IDENTIFIER_INPUT": (By.NAME, "text"),
@@ -28,33 +28,79 @@ LOCATORS = {
     "BODY": (By.TAG_NAME, 'body'),
 }
 
-def get_user_settings(): # loads settings from .env, or fallback to interactive prompts if settings are missing
-    load_dotenv()
-    handle_input = os.getenv("TWITTER_HANDLE")
-    if not handle_input:
-        handle_input = input("@handle: ")
-    password = os.getenv("TWITTER_PASS") or getpass.getpass("Password: ")
-    num_to_delete_str = os.getenv("NUM_TO_DELETE")
-    if num_to_delete_str:
-        num_to_delete = int(num_to_delete_str)
-    else:
-        while True:
-            try:
-                num_str = input("Enter number of tweets to delete (or input 0 to delete ALL): ")
-                num_to_delete = int(num_str)
-                if num_to_delete >= 0: break
-                else: print("... a POSITIVE integer, or 0.")
-            except ValueError:
-                print("Needs to be an integer.")
-    normalized_handle = handle_input.strip().lstrip('@') # normalize handle to ensure no @ or spaces
-    settings = {
-        "handle": normalized_handle,
-        "password": password,
-        "num_to_delete": num_to_delete,
-    }
-    return settings
+def create_gui_and_get_settings():
+    """Creates a tkinter GUI window to get user settings."""
+    
+    # This dictionary will hold our settings
+    settings = {}
+    
+    # This function is called when the "Start" button is clicked
+    def on_submit():
+        handle = handle_entry.get().strip().lstrip('@')
+        password = password_entry.get()
+        num_str = num_entry.get()
 
-def login_to_twitter(driver, wait, login_identifier, password): # handle login process with manual fallback
+        if not handle or not password:
+            messagebox.showerror("Error", "Handle and Password are required.")
+            return
+            
+        try:
+            num_to_delete = int(num_str)
+            if num_to_delete < 0:
+                messagebox.showerror("Error", "Number to delete must be a positive integer or 0.")
+                return
+        except ValueError:
+            messagebox.showerror("Error", "Number to delete must be a valid integer.")
+            return
+        
+        # Store valid settings in the dictionary
+        settings['handle'] = handle
+        settings['password'] = password
+        settings['num_to_delete'] = num_to_delete
+        
+        # Close the window
+        root.destroy()
+
+    # --- GUI Layout ---
+    root = tk.Tk()
+    root.title("Detweeter Setup")
+    root.geometry("350x200") # Set window size
+    root.resizable(False, False) # Make window not resizable
+
+    frame = tk.Frame(root, padx=10, pady=10)
+    frame.pack(expand=True, fill='both')
+
+    # Title
+    tk.Label(frame, text="DETWEETER", font=("Helvetica", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=(0, 10))
+
+    # Inputs and Labels
+    tk.Label(frame, text="Handle (@)").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+    handle_entry = tk.Entry(frame, width=30)
+    handle_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    tk.Label(frame, text="Password").grid(row=2, column=0, sticky='w', padx=5, pady=5)
+    password_entry = tk.Entry(frame, show="*", width=30)
+    password_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    tk.Label(frame, text="Number to Delete").grid(row=3, column=0, sticky='w', padx=5, pady=5)
+    num_entry = tk.Entry(frame, width=30)
+    num_entry.grid(row=3, column=1, padx=5, pady=5)
+    num_entry.insert(0, "10") # Default value
+
+    tk.Label(frame, text="Enter 0 to delete all unbookmarked tweets.", font=("Helvetica", 8)).grid(row=4, column=1, sticky='w', padx=5)
+
+    # Submit Button
+    submit_button = tk.Button(frame, text="Start Deletion", command=on_submit, bg='green', fg='white')
+    submit_button.grid(row=5, column=0, columnspan=2, pady=15)
+
+    # Start the GUI event loop
+    root.mainloop()
+    
+    # Return the settings dictionary (or an empty one if the window was closed)
+    return settings if 'handle' in settings else None
+
+# login_to_twitter and process_tweet functions remain identical
+def login_to_twitter(driver, wait, login_identifier, password):
     print("Navigating to login page...")
     driver.get("https://x.com/login")
     try:
@@ -111,13 +157,13 @@ def process_tweet(tweet, settings, wait, driver): # check if tweet is eligible f
         driver.find_element(*LOCATORS["BODY"]).send_keys(Keys.ESCAPE)
         time.sleep(0.5)
         return False
-    
-if __name__ == "__main__": # main script
-    print("BOOTING UP — CTRL+C TO ABORT")
-    settings = get_user_settings()
-    if not all([settings["handle"], settings["password"]]):
-        print("Handle and password are required. Exiting.")
-        exit()
+
+if __name__ == "__main__":
+    settings = create_gui_and_get_settings()
+    if not settings:
+        print("Operation cancelled by user. Exiting.")
+        sys.exit()
+    print("SETTINGS RECEIVED. BOOTING UP SELENIUM — PRESS CTRL+C IN THIS WINDOW TO ABORT")
     driver = None
     try:
         service = FirefoxService(GeckoDriverManager().install())
@@ -128,16 +174,16 @@ if __name__ == "__main__": # main script
         driver.maximize_window()
         wait = WebDriverWait(driver, 10)
         if not login_to_twitter(driver, wait, settings["handle"], settings["password"]):
-            exit()
+            sys.exit()
         profile_url = f"https://x.com/{settings['handle']}/with_replies"
         print(f"Accessing {profile_url}...")
         driver.get(profile_url)
         long_wait = WebDriverWait(driver, 20)
         long_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, f"a[href='/{settings['handle']}']")))
-        print("DETWEETION COMMENCING — CTRL+C TO ABORT")
+        print("DETWEETION COMMENCING...")
         time.sleep(2)
         if settings["num_to_delete"] == 0:
-            print(f"Infinite Mode — deleting ALL unbookmarked tweets.")
+            print("Infinite Mode — deleting ALL unbookmarked tweets.")
         else:
             print(f"Finite Mode — deleting {settings['num_to_delete']} most recent unbookmarked tweets.")
         deleted_count = 0
@@ -189,8 +235,10 @@ if __name__ == "__main__": # main script
         print(f"Critical error: {e}")
         import traceback
         traceback.print_exc()
+        messagebox.showerror("Critical Error", f"A critical error occurred:\n\n{e}\n\nSee console for details.")
     finally:
         if driver:
             print("Closing Firefox.")
             driver.quit()
         print("Exiting Script.")
+        time.sleep(1)
