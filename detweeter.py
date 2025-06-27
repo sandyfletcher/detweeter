@@ -1,5 +1,3 @@
-# detweeter.py
-
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
@@ -55,6 +53,7 @@ def get_user_settings(): # loads settings from .env, or fallback to interactive 
         "num_to_delete": num_to_delete,
     }
     return settings
+
 def login_to_twitter(driver, wait, login_identifier, password): # handle login process with manual fallback
     print("Navigating to login page...")
     driver.get("https://x.com/login")
@@ -82,6 +81,7 @@ def login_to_twitter(driver, wait, login_identifier, password): # handle login p
         except TimeoutException:
             print("Could not manually confirm login. Exiting.")
             return False
+        
 def process_tweet(tweet, settings, wait, driver): # check if tweet is eligible for deletion (authored by user, not bookmarked) and attempts to delete it. Returns True if deleted, False otherwise.
     try:
         # check 1: is it our tweet?
@@ -111,6 +111,7 @@ def process_tweet(tweet, settings, wait, driver): # check if tweet is eligible f
         driver.find_element(*LOCATORS["BODY"]).send_keys(Keys.ESCAPE)
         time.sleep(0.5)
         return False
+    
 if __name__ == "__main__": # main script
     print("BOOTING UP — CTRL+C TO ABORT")
     settings = get_user_settings()
