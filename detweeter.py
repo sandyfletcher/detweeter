@@ -25,6 +25,10 @@ LOCATORS = {
     "PASSWORD_INPUT": (By.NAME, "password"),
     "LOGIN_BUTTON": (By.XPATH, "//button[.//span[text()='Log in']]"),
     "HOME_FEED_LINK": (By.CSS_SELECTOR, "a[data-testid='AppTabBar_Home_Link']"),
+    "HOME_TIMELINE": (By.CSS_SELECTOR, "[data-testid='primaryColumn']"),
+    "USER_AVATAR": (By.CSS_SELECTOR, "[data-testid='SideNav_AccountSwitcher_Button']"),
+    "COMPOSE_TWEET": (By.CSS_SELECTOR, "[data-testid='SideNav_NewTweet_Button']"),
+    "SEARCH_BAR": (By.CSS_SELECTOR, "[data-testid='SearchBox_Search_Input']"),
     "TWEET_ARTICLE": (By.CSS_SELECTOR, "article[data-testid='tweet']"),
     "TWEET_AUTHOR_HANDLE": (By.XPATH, ".//div[@data-testid='User-Name']//span[starts-with(text(), '@')]"),
     "TWEET_PERMALINK": (By.XPATH, ".//a[./time]"),
@@ -167,35 +171,81 @@ class DetweeterApp:
             widget.config(state=state)
 
 def login_to_twitter(driver, wait, login_identifier, password):
-    print("Navigating to login page...")
+    browser_name = driver.capabilities.get('browserName', 'unknown')
+    print(f"Navigating to login page using {browser_name}...")
     driver.get("https://x.com/login")
     try:
+        # Enter username
+        print("Entering username...")
         username_field = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_IDENTIFIER_INPUT"]))
         username_field.send_keys(login_identifier)
+        # Click next
+        print("Clicking next button...")
         next_button = wait.until(EC.element_to_be_clickable(LOCATORS["NEXT_BUTTON"]))
         driver.execute_script("arguments[0].click();", next_button)
+        # Enter password
+        print("Entering password...")
         password_field = wait.until(EC.element_to_be_clickable(LOCATORS["PASSWORD_INPUT"]))
         password_field.send_keys(password)
-        login_button = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_BUTTON"]))
-        driver.execute_script("arguments[0].click();", login_button)
-        print("Waiting for login to complete (URL change)...")
-        WebDriverWait(driver, 20).until(EC.url_contains("home"))
-        print("Waiting for home feed to confirm login...")
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))
-        print("Home feed detected. Login successful.")
-        return True
-    except Exception:
-        print(f"--- MANUAL ACTION REQUIRED ---")
-        print(f"Automated login failed. You may need to solve a CAPTCHA or verify your identity.")
-        print("After you've logged in and see the home feed, the script will automatically continue.")
+        # Click login, and importantly, IGNORE exceptions that happen right after.
+        print("Clicking login button...")
         try:
-            WebDriverWait(driver, 60).until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))
-            print("Login confirmed manually.")
+            login_button = wait.until(EC.element_to_be_clickable(LOCATORS["LOGIN_BUTTON"]))
+            driver.execute_script("arguments[0].click();", login_button)
+            print("Login command sent.")
+        except Exception as e:
+            # This is expected in Chrome. The page navigates away, making the
+            # driver context stale, which can throw an error. We safely ignore it.
+            print(f"Ignoring expected error after login click: {type(e).__name__}")
+    except Exception as e:
+        print(f"A fatal error occurred before the final login click: {e}")
+        return False
+    # Now, patiently poll for success instead of using one rigid wait.
+    print("Verifying login by polling for home page elements...")
+    max_attempts = 15  # 15 attempts * 2 seconds = 30 second timeout
+    for attempt in range(max_attempts):
+        print(f"  Login check attempt {attempt + 1}/{max_attempts}...")
+        # Use our robust, multi-element check.
+        if check_login_success(driver, browser_name):
+            print("✓ Login successful!")
             return True
-        except TimeoutException:
-            print("Could not manually confirm login. Exiting.")
-            return False
+        time.sleep(2)  # Wait before retrying
+    # If the loop finishes, login has genuinely failed.
+    print("\n--- LOGIN FAILED ---")
+    print("Automated login timed out. The home page did not appear.")
+    print("This could be due to incorrect credentials, a CAPTCHA, or a new verification step.")
+    print("Please check the browser window and try again.")
+    return False
 
+def check_login_success(driver, browser_name):
+    """
+    Checks for multiple indicators of a successful login. This is designed
+    to be called repeatedly in a polling loop.
+    """
+    # Short-circuit if we're obviously still on a login/error page.
+    current_url = driver.current_url.lower()
+    if 'login' in current_url or 'error' in current_url:
+        return False
+    success_checks = [
+        ("home timeline", LOCATORS["HOME_TIMELINE"]),
+        ("home feed link", LOCATORS["HOME_FEED_LINK"]),
+        ("user avatar", LOCATORS["USER_AVATAR"]),
+        ("compose tweet button", LOCATORS["COMPOSE_TWEET"]),
+        ("search bar", LOCATORS["SEARCH_BAR"])
+    ]
+    for check_name, locator in success_checks:
+        try:
+            # We don't need a long wait here, just check if the element is present *now*.
+            elements = driver.find_elements(*locator)
+            if elements:
+                # Extra check for visibility
+                if any(el.is_displayed() for el in elements):
+                    print(f"  ✓ Success indicator found: {check_name}")
+                    return True
+        except Exception:
+            # Ignore errors like StaleElement, just means the page is still changing.
+            continue
+    return False
 def process_tweet(tweet, settings, wait, driver):
     try:
         author_handle = tweet.find_element(*LOCATORS["TWEET_AUTHOR_HANDLE"]).text[1:]
@@ -241,12 +291,18 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
             service = ChromeService(ChromeDriverManager().install())
             options = ChromeOptions()
             options.add_argument("--force-device-scale-factor=0.8")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-gpu")
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
             print("Opening Chrome...")
             driver = webdriver.Chrome(service=service, options=options)
         driver.maximize_window()
         wait = WebDriverWait(driver, 10)
         if not login_to_twitter(driver, wait, settings["handle"], settings["password"]):
-            raise Exception("Login failed. Please check credentials and try again.")
+            raise Exception("Login failed. Please check credentials, solve any CAPTCHAs, and try again.")
         profile_url = f"https://x.com/{settings['handle']}/with_replies"
         print(f"Accessing {profile_url}...")
         driver.get(profile_url)
