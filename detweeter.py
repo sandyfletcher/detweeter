@@ -39,7 +39,7 @@ LOCATORS = {
     "BODY": (By.TAG_NAME, 'body'),
 }
 
-class QueueWriter: # helper to redirect stdout to a queue
+class QueueWriter: # helper to redirect stdout to queue
     def __init__(self, queue):
         self.queue = queue
     def write(self, text):
@@ -54,11 +54,22 @@ class DetweeterApp:
         self.log_queue = queue.Queue()
         self.result_queue = queue.Queue()
         self.setup_gui()
-    def setup_gui(self): # creates styled tkinter GUI window
-        BG_COLOR, FG_COLOR, BTN_COLOR = "#2c3e50", "#ecf0f1", "#2980b9"
-        FONT_NORMAL, FONT_BOLD = ("Helvetica", 10), ("Helvetica", 16, "bold")
+        self.root.grid_rowconfigure(1, weight=1) # configure main window resizing behavior
+        self.root.grid_columnconfigure(0, weight=1)
+    def setup_gui(self): # styling
+        BG_COLOR = "#282c34"
+        FG_COLOR = "#abb2bf"
+        LOG_BG_COLOR = "#21252b"
+        ENTRY_BG_COLOR = "#3b4048"
+        BTN_COLOR = "#61afef"
+        BTN_HOVER_COLOR = "#528bcf"
+        FONT_FAMILY = "Segoe UI"
+        FONT_NORMAL = (FONT_FAMILY, 10)
+        FONT_BOLD = (FONT_FAMILY, 16, "bold")
+        FONT_MONO = ("Consolas", 10)
         self.root.title("DETWEETER")
-        try: # determine base path, accounting for whether it's a script or a frozen exe
+        self.root.minsize(550, 650)
+        try: # determine base path, accounting for whether it's a script or exe
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS # if app is run as a bundle, PyInstaller bootloader extends sys module by flag frozen=True and sets app path into variable _MEIPASS'
             else: # construct the full path to the icon
@@ -68,42 +79,47 @@ class DetweeterApp:
         except tk.TclError:
             print("Intended icon.ico could not be loaded, using default fallback.")
         self.root.configure(bg=BG_COLOR)
-        # settings frame
-        self.root.resizable(True, True)
-        settings_frame = tk.Frame(self.root, padx=15, pady=15, bg=BG_COLOR)
-        settings_frame.pack(expand=False, fill='x', side='top')
-        tk.Label(settings_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg=FG_COLOR).grid(row=0, column=0, columnspan=2, pady=(0, 15))
+        settings_frame = tk.Frame(self.root, padx=20, pady=20, bg=BG_COLOR)
+        settings_frame.grid(row=0, column=0, sticky="ew") # expand east-west
+        settings_frame.grid_columnconfigure(1, weight=1) # allow widgets column to expand
+        # title
+        tk.Label(settings_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg="white").grid(row=0, column=0, columnspan=2, pady=(0, 20))
         # browser selection
+        tk.Label(settings_frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=1, column=0, sticky='w', padx=5, pady=10)
         browser_frame = tk.Frame(settings_frame, bg=BG_COLOR)
         browser_frame.grid(row=1, column=1, sticky='w', pady=5)
-        tk.Label(settings_frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.browser_choice = tk.StringVar(value="Firefox")
-        self.firefox_rb = tk.Radiobutton(browser_frame, text="Firefox", variable=self.browser_choice, value="Firefox", bg=BG_COLOR, fg=FG_COLOR, selectcolor=BG_COLOR, font=FONT_NORMAL, activebackground=BG_COLOR, activeforeground=FG_COLOR)
-        self.firefox_rb.pack(side='left')
-        self.chrome_rb = tk.Radiobutton(browser_frame, text="Chrome", variable=self.browser_choice, value="Chrome", bg=BG_COLOR, fg=FG_COLOR, selectcolor=BG_COLOR, font=FONT_NORMAL, activebackground=BG_COLOR, activeforeground=FG_COLOR)
-        self.chrome_rb.pack(side='left')
-        # inputs and labels
-        tk.Label(settings_frame, text="Handle (@)", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=2, column=0, sticky='w', padx=5, pady=5)
-        self.handle_entry = tk.Entry(settings_frame, width=30, font=FONT_NORMAL)
-        self.handle_entry.grid(row=2, column=1, padx=5, pady=5)
-        tk.Label(settings_frame, text="Password", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=3, column=0, sticky='w', padx=5, pady=5)
-        self.password_entry = tk.Entry(settings_frame, show="*", width=30, font=FONT_NORMAL)
-        self.password_entry.grid(row=3, column=1, padx=5, pady=5)
-        tk.Label(settings_frame, text="Number to Delete", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=4, column=0, sticky='w', padx=5, pady=5)
-        self.num_entry = tk.Entry(settings_frame, width=30, font=FONT_NORMAL)
-        self.num_entry.grid(row=4, column=1, padx=5, pady=5)
+        # radio buttons
+        rb_style = {'bg': BG_COLOR, 'fg': FG_COLOR, 'selectcolor': BG_COLOR, 'font': FONT_NORMAL,'activebackground': BG_COLOR, 'activeforeground': 'white', 'highlightthickness': 0, 'borderwidth': 0}
+        self.firefox_rb = tk.Radiobutton(browser_frame, text="Firefox", variable=self.browser_choice, value="Firefox", **rb_style)
+        self.firefox_rb.pack(side='left', padx=5)
+        self.chrome_rb = tk.Radiobutton(browser_frame, text="Chrome", variable=self.browser_choice, value="Chrome", **rb_style)
+        self.chrome_rb.pack(side='left', padx=5)
+        # input fields and labels
+        entry_style = {'width': 35, 'font': FONT_NORMAL, 'bg': ENTRY_BG_COLOR, 'fg': FG_COLOR, 'relief': 'flat', 'insertbackground': FG_COLOR}
+        label_style = {'font': FONT_NORMAL, 'bg': BG_COLOR, 'fg': FG_COLOR}
+        tk.Label(settings_frame, text="Handle (@)", **label_style).grid(row=2, column=0, sticky='w', padx=5, pady=10)
+        self.handle_entry = tk.Entry(settings_frame, **entry_style)
+        self.handle_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
+        tk.Label(settings_frame, text="Password", **label_style).grid(row=3, column=0, sticky='w', padx=5, pady=10)
+        self.password_entry = tk.Entry(settings_frame, show="*", **entry_style)
+        self.password_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
+        tk.Label(settings_frame, text="Number to Delete", **label_style).grid(row=4, column=0, sticky='w', padx=5, pady=10)
+        self.num_entry = tk.Entry(settings_frame, **entry_style)
+        self.num_entry.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
         self.num_entry.insert(0, "10")
         # submit button
-        self.submit_button = tk.Button(settings_frame, text="Start Deletion", command=self.start_deletion_process, font=("Helvetica", 10, "bold"), bg=BTN_COLOR, fg=FG_COLOR, relief='flat', activebackground="#3498db", activeforeground="white")
-        self.submit_button.grid(row=5, column=0, columnspan=2, pady=20, ipadx=10, ipady=4)
-        # log frame
-        log_frame = tk.Frame(self.root, padx=15, pady=10, bg="#1e2732")
-        log_frame.pack(expand=True, fill='both', side='bottom')
+        self.submit_button = tk.Button(settings_frame, text="Start Deletion", command=self.start_deletion_process, font=(FONT_FAMILY, 10, "bold"), bg=BTN_COLOR, fg="white", relief='flat', borderwidth=0, activebackground=BTN_HOVER_COLOR, activeforeground="white")
+        self.submit_button.grid(row=5, column=0, columnspan=2, pady=25, ipadx=10, ipady=5, sticky='ew')
+        # log frame uses grid for resizing
+        log_frame = tk.Frame(self.root, padx=10, pady=10, bg=LOG_BG_COLOR)
+        log_frame.grid(row=1, column=0, sticky='nsew') # 'nsew' = expand in all directions
         log_frame.grid_rowconfigure(0, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
-        self.log_widget = scrolledtext.ScrolledText(log_frame, state='disabled', wrap=tk.WORD, bg="#1e2732", fg="#ecf0f1", font=("Consolas", 9))
-        self.log_widget.pack(expand=True, fill='both')
-    def start_deletion_process(self): # validates settings and starts worker thread
+        self.log_widget = scrolledtext.ScrolledText(log_frame, state='disabled', wrap=tk.WORD, bg=LOG_BG_COLOR, fg=FG_COLOR, font=FONT_MONO, relief='flat', borderwidth=0)
+        self.log_widget.grid(row=0, column=0, sticky='nsew')
+
+    def start_deletion_process(self):
         handle = self.handle_entry.get().strip().lstrip('@')
         password = self.password_entry.get()
         num_str = self.num_entry.get()
