@@ -53,7 +53,6 @@ class DetweeterApp:
         self.root = root
         self.thread = None
         self.log_queue = queue.Queue()
-        self.result_queue = queue.Queue()
         self.loaded_font_paths = [] # track loaded fonts for cleanup
         self.validate_handle_cmd = (self.root.register(self._validate_length), '%P', 15) # handles are <= 15 chars
         self.validate_password_cmd = (self.root.register(self._validate_length), '%P', 50) # passwords are <= 50 chars
@@ -221,7 +220,7 @@ class DetweeterApp:
         self.log_widget.config(state='disabled')
         self.thread = threading.Thread( # start the worker thread
             target=run_detweeter_logic, 
-            args=(settings, self.log_queue, self.result_queue)
+            args=(settings, self.log_queue)
         )
         self.thread.daemon = True
         self.thread.start()
@@ -338,10 +337,9 @@ def process_tweet(tweet, settings, wait, driver): # processes a single tweet and
         except: pass
         return 'ERROR'
 
-def run_detweeter_logic(settings, log_queue, result_queue): # main worker function that runs in a separate thread
+def run_detweeter_logic(settings, log_queue): # main worker function that runs in a separate thread
     sys.stdout = QueueWriter(log_queue)
     driver = None
-    final_message = ""
     deleted_count = 0
     skipped_count = 0
     processed_count = 0
@@ -412,9 +410,9 @@ def run_detweeter_logic(settings, log_queue, result_queue): # main worker functi
                         processed_count += 1
                         skipped_count += 1
                     elif status == 'ERROR':
-                        # An attempt was made on our tweet, but failed. It's counted as processed.
+                        # An attempt was made on our tweet, but failed, so it's counted as processed
                         processed_count += 1
-                        # If status is 'SKIPPED_AUTHOR', we do nothing and don't count it.
+                    # if status is 'SKIPPED_AUTHOR', we do nothing and don't count it
                 except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
                     print("  - Could not process a tweet element, may have become stale or been an ad.")
                     continue
