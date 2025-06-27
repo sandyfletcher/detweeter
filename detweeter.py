@@ -59,15 +59,15 @@ def create_gui_and_get_settings():
         settings['browser'] = browser_choice.get()
         root.destroy()
 
-    BG_COLOR = "#2c3e50"
-    FG_COLOR = "#ecf0f1"
-    BTN_COLOR = "#2980b9"
-    FONT_NORMAL = ("Helvetica", 10)
-    FONT_BOLD = ("Helvetica", 16, "bold")
+    BG_COLOR, FG_COLOR, BTN_COLOR = "#2c3e50", "#ecf0f1", "#2980b9"
+    FONT_NORMAL, FONT_BOLD = ("Helvetica", 10), ("Helvetica", 16, "bold")
 
     root = tk.Tk()
     root.title("DETWEETER")
-    root.iconbitmap('icon.ico')
+    try:
+        root.iconbitmap('icon.ico') # Will work if icon.ico is present
+    except tk.TclError:
+        print("icon.ico not found, using default icon.")
     root.configure(bg=BG_COLOR)
     root.resizable(False, False)
     frame = tk.Frame(root, padx=15, pady=15, bg=BG_COLOR)
@@ -114,8 +114,9 @@ def login_to_twitter(driver, wait, login_identifier, password):
         print("Home feed detected. Login successful.")
         return True
     except Exception:
+        print(f"\n--- MANUAL ACTION REQUIRED ---")
         print(f"Automated login failed. You may need to solve a CAPTCHA or verify your identity.")
-        print("After you've logged in and see the home feed, press Enter here to continue...")
+        print("After you've logged in and see the home feed, press Enter in this console window to continue...")
         input()
         try:
             WebDriverWait(driver, 30).until(EC.presence_of_element_located(LOCATORS["HOME_FEED_LINK"]))
@@ -129,13 +130,15 @@ def process_tweet(tweet, settings, wait, driver):
     try:
         author_handle = tweet.find_element(*LOCATORS["TWEET_AUTHOR_HANDLE"]).text[1:]
         if author_handle.lower() != settings['handle'].lower():
-            return False
+            return False # It's someone else's tweet on your timeline (e.g., a reply)
+        # Check if the tweet has been bookmarked by the user
         if tweet.find_elements(*LOCATORS["BOOKMARK_BUTTON_EXISTS"]):
             permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
             print(f"Skipped (bookmarked): {permalink}")
             return False
         permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
         print(f"QUALIFIES FOR DELETION: {permalink}")
+        # Perform deletion
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", tweet)
         time.sleep(0.5)
         more_options_button = tweet.find_element(*LOCATORS["MORE_OPTIONS_BUTTON"])
@@ -144,6 +147,7 @@ def process_tweet(tweet, settings, wait, driver):
         driver.execute_script("arguments[0].click();", delete_item)
         confirm_button = wait.until(EC.element_to_be_clickable(LOCATORS["DELETE_CONFIRM_BUTTON"]))
         driver.execute_script("arguments[0].click();", confirm_button)
+        # Wait for tweet to disappear from the DOM
         wait.until(EC.staleness_of(tweet))
         return True
     except (TimeoutException, StaleElementReferenceException, NoSuchElementException) as e:
@@ -161,6 +165,7 @@ if __name__ == "__main__":
     # Use --console flag to see these print statements in the packaged app
     print("SETTINGS RECEIVED. BOOTING UP SELENIUM...")
     driver = None
+    final_deleted_count = 0  # Store count for the final message box
     try:
         if settings['browser'] == "Firefox":
             service = FirefoxService(GeckoDriverManager().install())
@@ -183,7 +188,7 @@ if __name__ == "__main__":
         driver.get(profile_url)
         long_wait = WebDriverWait(driver, 20)
         long_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, f"a[href='/{settings['handle']}']")))
-        print("DETWEETION COMMENCING...")
+        print("\nDETWEETION COMMENCING...")
         time.sleep(2)
         if settings["num_to_delete"] == 0:
             print("Infinite Mode — deleting ALL unbookmarked tweets.")
@@ -194,57 +199,61 @@ if __name__ == "__main__":
         stalls = 0
         while True:
             if settings["num_to_delete"] > 0 and deleted_count >= settings["num_to_delete"]:
-                print(f"Target ({settings['num_to_delete']}) deletions reached.")
+                print(f"\nTarget ({settings['num_to_delete']}) deletions reached.")
                 break
+            # Find tweets currently visible on the page
             tweets_on_page = driver.find_elements(*LOCATORS["TWEET_ARTICLE"])
-            if not tweets_on_page and stalls > 0: # avoid stalling on initial load
-                stalls += 1
-                print(f"No eligible tweets found. Scrolling stall count: {stalls}/3)")
-                if stalls >= 3: break
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(3)
-                continue
-            found_new_tweet = False
+            if not tweets_on_page and stalls == 0:
+                print("No tweets found on initial load. Scrolling down to find some.")
+                stalls += 1 # Use the stall counter to prevent an infinite loop
+            found_new_tweet_this_pass = False
             for tweet in tweets_on_page:
                 try:
                     permalink = tweet.find_element(*LOCATORS["TWEET_PERMALINK"]).get_attribute('href')
                     if permalink in processed_permalinks:
-                        continue
-                    found_new_tweet = True
+                        continue # Skip already processed tweet
+                    found_new_tweet_this_pass = True
                     processed_permalinks.add(permalink)
                     if process_tweet(tweet, settings, wait, driver):
                         deleted_count += 1
                         print(f"TWEET DELETED — TOTAL THIS SESSION: {deleted_count}")
-                        time.sleep(1) # pause for UI to settle after deletion
-                        break # re-scan from the top after a successful deletion
+                        time.sleep(1) # Brief pause to let UI update
+                        # Break inner loop to re-fetch the tweet list, as the DOM has changed
+                        break 
                 except (NoSuchElementException, StaleElementReferenceException):
+                    # Tweet was part of a deleted thread or became stale, just continue
                     continue
-            else: # this 'else' block runs only if the 'for' loop completes without a 'break'
-                if found_new_tweet:
-                    stalls = 0
-                    print("Visible tweets have been processed. Scrolling...")
+            else: # This 'else' belongs to the 'for' loop
+                # If we iterated through all tweets and didn't break (i.e., didn't delete one)
+                if found_new_tweet_this_pass:
+                    stalls = 0 # Reset stalls if we see new tweets but they are all skipped
+                    print("Visible tweets have been processed/skipped. Scrolling down...")
                 else:
                     stalls += 1
-                    print(f"No eligible tweets found. Scrolling stall count: {stalls}/3")
+                    print(f"No new, unprocessed tweets found. Scrolling stall count: {stalls}/3")
+
                 if stalls >= 3:
-                    print("Scroll has repeatedly stalled — assuming end of timeline.")
+                    print("Scrolling has repeatedly stalled — assuming end of timeline.")
                     break
+                # Scroll down to load more tweets
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(3)
-        print(f"DETWEETER COMPLETE — TOTAL: {deleted_count}")
-        messagebox.showinfo("Complete", f"Detweeter has finished.\n\nTotal tweets deleted: {deleted_count}")
+                time.sleep(3) # Wait for content to load
+        print(f"\nDETWEETER COMPLETE — TOTAL: {deleted_count}")
+        final_deleted_count = deleted_count # Save the final count
 
     except KeyboardInterrupt:
-        print("Script interrupted by user.")
+        print("\nScript interrupted by user.")
     except Exception as e:
-        print(f"Critical error: {e}")
+        print(f"\nCRITICAL ERROR: {e}")
         import traceback
         traceback.print_exc()
-        messagebox.showerror("Critical Error", f"A critical error occurred:\n\n{e}\n\nSee console for details if available.")
-
+        messagebox.showerror("Critical Error", f"A critical error occurred:\n\n{e}\n\nSee console for details.")
     finally:
+        # This block ALWAYS runs, ensuring the browser is closed.
         if driver:
             print("Closing browser.")
             driver.quit()
         print("Exiting Script.")
-        time.sleep(1) # give user time to read final messages
+        
+    # ensure browser is closed before script pauses for this message
+    messagebox.showinfo("Complete", f"Detweeter has finished.\n\nTotal tweets deleted: {final_deleted_count}")
