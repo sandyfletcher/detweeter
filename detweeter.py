@@ -18,7 +18,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from webdriver_manager.firefox import GeckoDriverManager
 from webdriver_manager.chrome import ChromeDriverManager
-import traceback
 
 LOCATORS = {
     "LOGIN_IDENTIFIER_INPUT": (By.NAME, "text"),
@@ -115,9 +114,9 @@ class DetweeterApp:
                         print(f"Successfully loaded font via GDI: {body_font_family}")
         # define final fonts based on what was loaded
         FONT_INSTRUCTIONS = (body_font_family, 10)
-        FONT_TITLE = (title_font_family, 18)
+        FONT_TITLE = (title_font_family, 60)
         FONT_CONTROLS = FONT_MONO # same mono font for controls and logs
-        self.root.title("DETWEETER")
+        self.root.title("")
         self.root.minsize(600, 600)
         self.root.maxsize(600, 1800)
         self.root.configure(bg=BG_COLOR)
@@ -138,7 +137,7 @@ class DetweeterApp:
         # define styles for controls
         label_style = {'font': FONT_CONTROLS, 'bg': BG_COLOR, 'fg': FG_COLOR}
         rb_style = {'bg': BG_COLOR, 'fg': FG_COLOR, 'selectcolor': BG_COLOR, 'font': FONT_CONTROLS,'activebackground': BG_COLOR, 'activeforeground': 'white', 'highlightthickness': 0, 'borderwidth': 0}
-        entry_style = {'width': 35, 'font': FONT_CONTROLS, 'bg': ENTRY_BG_COLOR, 'fg': FG_COLOR, 'relief': 'flat', 'insertbackground': FG_COLOR}
+        entry_style = {'width': 35, 'font': FONT_CONTROLS, 'bg': ENTRY_BG_COLOR, 'fg': FG_COLOR, 'relief': 'flat', 'insertbackground': FG_COLOR, 'disabledbackground': ENTRY_BG_COLOR, 'disabledforeground': "#6f7885"}
         # browser selection
         tk.Label(content_frame, text="Browser", **label_style).grid(row=2, column=0, sticky='w', padx=5, pady=10)
         browser_frame = tk.Frame(content_frame, bg=BG_COLOR)
@@ -182,7 +181,6 @@ class DetweeterApp:
         log_frame.grid_columnconfigure(0, weight=1)
         self.log_widget = scrolledtext.ScrolledText(log_frame, state='disabled', wrap=tk.WORD, bg=LOG_BG_COLOR, fg=FG_COLOR, font=FONT_MONO, relief='flat', borderwidth=0)
         self.log_widget.grid(row=0, column=0, sticky='nsew')
-
     def toggle_num_entry_state(self):
         if self.delete_all_var.get():
             self.num_entry.config(state='disabled')
