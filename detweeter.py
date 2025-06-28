@@ -89,7 +89,7 @@ class DetweeterApp:
                 base_path = sys._MEIPASS
             else:
                 base_path = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(base_path, 'icon.ico')
+            icon_path = os.path.join(base_path, 'assets', 'icon.ico')
             self.root.iconbitmap(icon_path)
         except tk.TclError:
             print("Intended icon.ico could not be loaded, using default fallback.")
