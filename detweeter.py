@@ -85,7 +85,7 @@ class DetweeterApp:
         BTN_HOVER_COLOR = "#528bcf"
         FONT_MONO = ("Consolas", 10)
         base_path = "" # determine base path for icon and fonts
-        try: 
+        try:
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS
             else:
@@ -114,38 +114,41 @@ class DetweeterApp:
                         self.loaded_font_paths.append(body_font_path)
                         print(f"Successfully loaded font via GDI: {body_font_family}")
         # define final fonts based on what was loaded
-        FONT_NORMAL = (body_font_family, 10)
-        FONT_BOLD = (title_font_family, 18)
+        FONT_INSTRUCTIONS = (body_font_family, 10)
+        FONT_TITLE = (title_font_family, 18)
+        FONT_CONTROLS = FONT_MONO # same mono font for controls and logs
         self.root.title("DETWEETER")
-        self.root.minsize(600, 750) 
+        self.root.minsize(600, 600)
+        self.root.maxsize(600, 1800)
         self.root.configure(bg=BG_COLOR)
         main_frame = tk.Frame(self.root, padx=20, pady=20, bg=BG_COLOR)
         main_frame.grid(row=0, column=0, sticky="ew")
-        main_frame.grid_columnconfigure(0, weight=1) 
+        main_frame.grid_columnconfigure(0, weight=1)
         content_frame = tk.Frame(main_frame, bg=BG_COLOR)
-        content_frame.grid(row=0, column=0) 
-        content_frame.grid_columnconfigure(1, weight=1) 
+        content_frame.grid(row=0, column=0)
+        content_frame.grid_columnconfigure(1, weight=1)
         # title
-        tk.Label(content_frame, text="DETWEETER", font=FONT_BOLD, bg=BG_COLOR, fg="white").grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        tk.Label(content_frame, text="DETWEETER", font=FONT_TITLE, bg=BG_COLOR, fg="white").grid(row=0, column=0, columnspan=2, pady=(0, 20))
         info_text = (
             "This tool automates deleting your tweets.\n\n"
             "If there's something you want to save, bookmark it and the script will pass over it.\n\n"
             "Choose a browser, input your credentials, and select a deletion mode."
         )
-        tk.Label(content_frame, text=info_text, font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR, wraplength=520, justify='left').grid(row=1, column=0, columnspan=2, pady=(0, 25))
+        tk.Label(content_frame, text=info_text, font=FONT_INSTRUCTIONS, bg=BG_COLOR, fg=FG_COLOR, wraplength=520, justify='left').grid(row=1, column=0, columnspan=2, pady=(0, 25))
+        # define styles for controls
+        label_style = {'font': FONT_CONTROLS, 'bg': BG_COLOR, 'fg': FG_COLOR}
+        rb_style = {'bg': BG_COLOR, 'fg': FG_COLOR, 'selectcolor': BG_COLOR, 'font': FONT_CONTROLS,'activebackground': BG_COLOR, 'activeforeground': 'white', 'highlightthickness': 0, 'borderwidth': 0}
+        entry_style = {'width': 35, 'font': FONT_CONTROLS, 'bg': ENTRY_BG_COLOR, 'fg': FG_COLOR, 'relief': 'flat', 'insertbackground': FG_COLOR}
         # browser selection
-        tk.Label(content_frame, text="Browser", font=FONT_NORMAL, bg=BG_COLOR, fg=FG_COLOR).grid(row=2, column=0, sticky='w', padx=5, pady=10)
+        tk.Label(content_frame, text="Browser", **label_style).grid(row=2, column=0, sticky='w', padx=5, pady=10)
         browser_frame = tk.Frame(content_frame, bg=BG_COLOR)
         browser_frame.grid(row=2, column=1, sticky='w', pady=5)
         self.browser_choice = tk.StringVar(value="Firefox")
-        rb_style = {'bg': BG_COLOR, 'fg': FG_COLOR, 'selectcolor': BG_COLOR, 'font': FONT_NORMAL,'activebackground': BG_COLOR, 'activeforeground': 'white', 'highlightthickness': 0, 'borderwidth': 0}
         self.firefox_rb = tk.Radiobutton(browser_frame, text="Firefox", variable=self.browser_choice, value="Firefox", **rb_style)
         self.firefox_rb.pack(side='left', padx=5)
         self.chrome_rb = tk.Radiobutton(browser_frame, text="Chrome", variable=self.browser_choice, value="Chrome", **rb_style)
         self.chrome_rb.pack(side='left', padx=5)
         # input fields and labels
-        entry_style = {'width': 35, 'font': FONT_NORMAL, 'bg': ENTRY_BG_COLOR, 'fg': FG_COLOR, 'relief': 'flat', 'insertbackground': FG_COLOR}
-        label_style = {'font': FONT_NORMAL, 'bg': BG_COLOR, 'fg': FG_COLOR}
         tk.Label(content_frame, text="Handle (@)", **label_style).grid(row=3, column=0, sticky='w', padx=5, pady=10)
         self.handle_entry = tk.Entry(content_frame, **entry_style, validate='key', validatecommand=self.validate_handle_cmd)
         self.handle_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
@@ -170,8 +173,7 @@ class DetweeterApp:
         self.num_entry.insert(0, "10")
         tk.Label(controls_frame, text="tweets", **label_style).pack(side='left', padx=5)
         # submit button
-        button_font = (body_font_family, 10)
-        self.submit_button = tk.Button(content_frame, text="Start Deletion", command=self.start_deletion_process, font=button_font, bg=BTN_COLOR, fg="white", relief='flat', borderwidth=0, activebackground=BTN_HOVER_COLOR, activeforeground="white")
+        self.submit_button = tk.Button(content_frame, text="Start Deletion", command=self.start_deletion_process, font=FONT_CONTROLS, bg=BTN_COLOR, fg="white", relief='flat', borderwidth=0, activebackground=BTN_HOVER_COLOR, activeforeground="white")
         self.submit_button.grid(row=6, column=0, columnspan=2, pady=30, ipadx=10, ipady=5, sticky='ew')
         # log frame uses grid for resizing
         log_frame = tk.Frame(self.root, padx=10, pady=10, bg=LOG_BG_COLOR)
@@ -219,7 +221,7 @@ class DetweeterApp:
         self.log_widget.delete('1.0', tk.END)
         self.log_widget.config(state='disabled')
         self.thread = threading.Thread( # start the worker thread
-            target=run_detweeter_logic, 
+            target=run_detweeter_logic,
             args=(settings, self.log_queue)
         )
         self.thread.daemon = True
@@ -245,8 +247,7 @@ class DetweeterApp:
         self.toggle_widgets_state('normal')
         self.toggle_num_entry_state() # ensure num_entry state is correct based on checkbox
     def toggle_widgets_state(self, state):
-        for widget in [self.handle_entry, self.password_entry, self.num_entry, 
-                       self.submit_button, self.firefox_rb, self.chrome_rb, self.delete_all_cb]:
+        for widget in [self.handle_entry, self.password_entry, self.num_entry, self.submit_button, self.firefox_rb, self.chrome_rb, self.delete_all_cb]:
             widget.config(state=state)
 
 def login_to_twitter(driver, wait, login_identifier, password):
@@ -282,8 +283,6 @@ def login_to_twitter(driver, wait, login_identifier, password):
             print("✓ Login successful!")
             return True
         time.sleep(1)  # pause before retrying
-    print("--- LOGIN FAILED ---") # if loop finishes login has genuinely failed
-    print("Login verification failed. Please check submitted credentials and try again.")
     return False
 
 def check_login_success(driver, browser_name): # checks for multiple indicators of a successful login
@@ -431,7 +430,6 @@ def run_detweeter_logic(settings, log_queue): # main worker function that runs i
         print("Script interrupted by user.")
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
-        traceback.print_exc(file=sys.stdout)
     finally:
         print("\n" + "="*20)
         print(" DETWEETION SUMMARY")
